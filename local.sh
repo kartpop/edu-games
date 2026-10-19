@@ -17,7 +17,8 @@ show_urls() {
   echo "  This Mac:     http://localhost:$PORT/"
   echo "  iPhone/iPad:  http://$ip:$PORT/   (same Wi-Fi)"
   echo
-  for d in games/*/*/; do
+  # games live at <grade>/<subject>/<game>/
+  for d in */*/*/; do
     [[ -f "$d/index.html" ]] && echo "  ${d%/}  →  http://$ip:$PORT/$d"
   done
   echo
