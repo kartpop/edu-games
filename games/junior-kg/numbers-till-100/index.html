@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Numbers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAF6EE;
+    --ink: #3E4A59;
+    --soft: #9AA2AE;
+    --line: #D6CDBB;
+    --card: #FFFDF8;
+    /* one soft tint per group of ten */
+    --d0: #E3F1EA;
+    --d1: #F8E6DA;
+    --d2: #E9E4F3;
+    --d3: #F6EFD5;
+    --d4: #DDEBF4;
+    --d5: #F5E1E6;
+    --d6: #E6EEDC;
+    --d7: #F2E8DC;
+    --d8: #E1E6F5;
+    --d9: #DCF0EE;
+    --coral: #E3A08C;
+    --good: #D3EBDA;
+    --goodline: #94C7A3;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg); color: var(--ink);
+    font-family: Nunito, ui-rounded, system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overflow: hidden;
+  }
+  button { font-family: inherit; color: inherit; }
+
+  #app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; padding: 56px 20px 8px; }
+  .main { flex: 1; min-height: 0; display: flex; gap: 28px; }
+  .panel {
+    flex: 0 0 38%; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; gap: 28px; text-align: center;
+  }
+  #app.wide .panel { flex-basis: 30%; }
+  .board { flex: 1; min-width: 0; min-height: 0; position: relative; container-type: size; }
+  @media (orientation: portrait) {
+    #app { padding-top: 52px; }
+    .main { flex-direction: column; gap: 16px; }
+    .panel { flex: 0 0 auto; gap: 16px; }
+  }
+
+  /* ---------- top corners ---------- */
+  .icon {
+    position: fixed; top: 10px; z-index: 20;
+    width: 42px; height: 42px; border-radius: 50%; border: 0;
+    background: transparent; color: var(--soft); font-size: 22px; cursor: pointer;
+  }
+  #gear { left: 12px; }
+  #musicBtn { right: 12px; }
+  #musicBtn.off { opacity: .35; text-decoration: line-through; }
+  .title {
+    position: fixed; top: 18px; left: 0; right: 0; text-align: center;
+    font-weight: 800; font-size: 17px; letter-spacing: .06em; color: var(--soft); pointer-events: none;
+  }
+
+  /* ---------- question panel ---------- */
+  .prompt { font-size: clamp(26px, 3.4vw, 50px); font-weight: 700; line-height: 1.45; min-height: 1.5em; }
+  .prompt b { font-weight: 800; }
+  .prompt small { display: block; font-size: .5em; color: var(--soft); }
+  .num { display: inline-block; background: var(--t); border-radius: 14px; padding: 0 .3em; min-width: 1.7em; }
+  .say {
+    border: 0; background: var(--card); border-radius: 50%; width: 52px; height: 52px;
+    font-size: 22px; cursor: pointer; box-shadow: 0 1px 0 rgba(0,0,0,.06);
+  }
+  .skip {
+    border: 0; background: #F1ECE2; border-radius: 30px; padding: 10px 22px;
+    font-size: 18px; font-weight: 700; color: var(--soft); cursor: pointer;
+  }
+  .skip[hidden] { display: none; }
+  .choices { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+  .choices:empty { display: none; }
+  .card {
+    min-width: clamp(96px, 11vw, 150px); height: clamp(80px, 13vh, 130px); padding: 0 18px;
+    font-size: clamp(40px, 5vw, 66px); font-weight: 800;
+    border: 0; border-radius: 22px; background: var(--card); cursor: pointer;
+    box-shadow: inset 0 0 0 2px #EDE6D8;
+    transition: background .4s, opacity .4s, box-shadow .4s;
+  }
+
+  /* ---------- number grid: columns of ten, 1–10 top to bottom ---------- */
+  .grid {
+    --cols: 5;
+    position: absolute; top: 0; bottom: 0; left: 0; right: 0; margin-inline: auto;
+    width: min(100cqw, var(--cols) * 16.4cqh);
+    display: grid; grid-template-columns: repeat(var(--cols), 1fr); grid-template-rows: repeat(10, 1fr);
+    grid-auto-flow: column;
+    column-gap: clamp(10px, 25cqw / var(--cols), 44px); row-gap: clamp(3px, .9cqh, 8px);
+  }
+  .tile {
+    border: 0; border-radius: 12px; padding: 0; cursor: pointer; min-width: 0;
+    background: var(--t); font-weight: 700; font-size: min(5.2cqh, 35cqw / var(--cols));
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 0 0 3px transparent;
+    transition: background .4s, opacity .4s, box-shadow .4s, color .4s;
+  }
+  .tile.qmark { color: var(--coral); font-weight: 800; }
+  .tile.ref, .card.ref { box-shadow: inset 0 0 0 3px var(--coral); }
+  .tile.dim, .card.dim { opacity: .4; }
+  .tile.glow, .card.glow { animation: breathe 2.4s ease-in-out infinite; }
+  .tile.good, .card.good { background: var(--good); box-shadow: inset 0 0 0 3px var(--goodline); animation: none; }
+  @keyframes breathe {
+    0%, 100% { box-shadow: inset 0 0 0 3px rgba(227,160,140,.3); }
+    50% { box-shadow: inset 0 0 0 4px rgba(227,160,140,1); }
+  }
+
+  #arrows { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .bridge { fill: none; stroke: var(--line); stroke-width: 2; stroke-linecap: round; }
+  .hint { fill: none; stroke: var(--coral); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 8; animation: fadein .8s ease; }
+  @keyframes fadein { from { opacity: 0; } }
+
+  /* ---------- slow turtle = time ---------- */
+  .time { position: relative; height: 40px; flex: 0 0 auto; }
+  .track { position: absolute; left: 10px; right: 10px; top: 55%; border-top: 2px dotted var(--line); }
+  #turtle {
+    --p: 0;
+    position: absolute; top: 55%; left: calc(6px + var(--p) * (100% - 46px));
+    transform: translateY(-55%) scaleX(-1); font-size: 26px; transition: left 1s linear;
+  }
+  #note { position: absolute; right: 12px; top: -4px; font-size: 15px; font-weight: 700; color: var(--soft); }
+
+  /* ---------- full screens ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 10; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center;
+  }
+  .overlay[hidden] { display: none; }
+  .overlay h1 { margin: 0; font-size: clamp(44px, 8vmin, 72px); font-weight: 800; }
+  .overlay p { margin: 0; font-size: clamp(20px, 3vmin, 28px); color: var(--soft); font-weight: 700; }
+  .strip { display: flex; gap: 8px; margin-bottom: 8px; }
+  .strip span { width: 54px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 22px; }
+  .big { font-size: clamp(100px, 22vmin, 190px); line-height: 1.1; animation: float 6s ease-in-out infinite; }
+  @keyframes float { 50% { transform: translateY(-8px); } }
+  .btn {
+    font-weight: 800; font-size: 28px; padding: 18px 48px; margin-top: 18px;
+    border-radius: 40px; border: 0; background: var(--d4); cursor: pointer;
+  }
+  .small-note { position: absolute; bottom: 18px; font-size: 14px !important; }
+
+  #settings { background: rgba(250,246,238,.92); z-index: 30; }
+  .sheet {
+    background: var(--card); border-radius: 24px; padding: 26px 28px; width: min(460px, 100%);
+    box-shadow: 0 6px 30px rgba(62,74,89,.12); text-align: left;
+  }
+  .sheet h2 { margin: 0 0 14px; font-size: 22px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; font-size: 18px; font-weight: 700; }
+  .row input { width: 22px; height: 22px; accent-color: #8FB8D0; }
+  .row select { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 12px; border: 0; background: #F1ECE2; color: var(--ink); }
+  .seg { display: flex; gap: 6px; }
+  .seg button { border: 0; border-radius: 12px; padding: 8px 12px; font-weight: 700; font-size: 16px; background: #F1ECE2; cursor: pointer; }
+  .seg button.on { background: var(--d4); box-shadow: inset 0 0 0 2px #A9C8DB; }
+  .btns { justify-content: flex-end; padding-top: 18px; }
+  .btn.sm { font-size: 18px; padding: 10px 22px; margin: 0; }
+  .btn.alt { background: #F1ECE2; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<button id="gear" class="icon" title="Hold for settings" aria-label="Settings (hold)">⚙︎</button>
+<button id="musicBtn" class="icon" title="Music on/off" aria-label="Music on/off">♪</button>
+
+<div id="app">
+  <div class="title">NUMBERS</div>
+  <div class="main">
+    <div class="panel">
+      <div class="prompt" id="prompt"></div>
+      <div class="choices" id="choices"></div>
+      <button class="say" id="say" aria-label="Say it again">🔊</button>
+      <button class="skip" id="skip" hidden>Skip counting ⏭</button>
+    </div>
+    <div class="board">
+      <div class="grid" id="grid">
+        <svg id="arrows">
+          <defs>
+            <marker id="mb" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M2 1.5 L8 5 L2 8.5" fill="none" stroke="#D6CDBB" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+            <marker id="mh" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+              <path d="M2 1.5 L8 5 L2 8.5" fill="none" stroke="#E3A08C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+          </defs>
+          <g id="bridges"></g>
+          <g id="hintLayer"></g>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="time">
+    <div class="track"></div>
+    <div id="turtle">🐢</div>
+    <div id="note"></div>
+  </div>
+</div>
+
+<div id="start" class="overlay">
+  <div class="strip">
+    <span style="background:var(--d0)">1</span><span style="background:var(--d1)">11</span><span style="background:var(--d2)">21</span><span style="background:var(--d3)">31</span><span style="background:var(--d4)">41</span>
+  </div>
+  <h1>Numbers</h1>
+  <p id="rangeLabel">1 to 100</p>
+  <button class="btn" id="play">▶ Play</button>
+  <p class="small-note">Grown-ups: hold ⚙︎ for settings</p>
+</div>
+
+<div id="end" class="overlay" hidden>
+  <div class="big" id="animal">🐬</div>
+  <h1>All done!</h1>
+  <p>See you tomorrow</p>
+  <p id="bye"></p>
+</div>
+
+<div id="settings" class="overlay" hidden>
+  <div class="sheet">
+    <h2>For grown-ups</h2>
+    <div class="row"><span>Numbers</span>
+      <div class="seg" id="range">
+        <button data-r="50">1 – 50</button><button data-r="100">1 – 100</button>
+      </div>
+    </div>
+    <div class="row"><span>Play time</span>
+      <div class="seg" id="mins">
+        <button data-m="3">3 min</button><button data-m="5">5 min</button><button data-m="7">7 min</button>
+      </div>
+    </div>
+    <label class="row"><span>Hide some numbers</span><input type="checkbox" id="fadeOn"></label>
+    <label class="row"><span>Music</span><input type="checkbox" id="musicOn"></label>
+    <label class="row"><span>Voice</span><input type="checkbox" id="voiceOn"></label>
+    <div class="row">
+      <select id="voicePick"></select>
+      <button class="btn sm alt" id="testVoice">Test</button>
+    </div>
+    <div class="row btns">
+      <button class="btn sm alt" id="close">Close</button>
+      <button class="btn sm" id="restart">Start again</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const col = n => Math.floor((n - 1) / 10);
+const tint = n => `var(--d${col(n)})`;
+const num = n => `<span class="num" style="--t:${tint(n)}">${n}</span>`;
+const range = (a, b, step = 1) => { const r = []; for (let n = a; n <= b; n += step) r.push(n); return r; };
+
+/* ---------------- settings ---------------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('numbers.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('numbers.' + k, JSON.stringify(v)); } catch {} },
+};
+const settings = Object.assign({ max: 100, minutes: 5, fade: false, music: true, voice: true, voiceName: '' }, store.get('settings', {}));
+const saveSettings = () => store.set('settings', settings);
+let N = settings.max; // highest number on the board, fixed for a session
+
+/* ---------------- music box (public-domain tunes) ---------------- */
+const SONGS = [
+  // Twinkle Twinkle Little Star
+  'C5 1,C5 1,G5 1,G5 1,A5 1,A5 1,G5 2,F5 1,F5 1,E5 1,E5 1,D5 1,D5 1,C5 2,G5 1,G5 1,F5 1,F5 1,E5 1,E5 1,D5 2,G5 1,G5 1,F5 1,F5 1,E5 1,E5 1,D5 2,C5 1,C5 1,G5 1,G5 1,A5 1,A5 1,G5 2,F5 1,F5 1,E5 1,E5 1,D5 1,D5 1,C5 2',
+  // Row Row Row Your Boat
+  'C5 1.5,C5 1.5,C5 1,D5 .5,E5 1.5,E5 1,D5 .5,E5 1,F5 .5,G5 3,C6 .5,C6 .5,C6 .5,G5 .5,G5 .5,G5 .5,E5 .5,E5 .5,E5 .5,C5 .5,C5 .5,C5 .5,G5 1,F5 .5,E5 1,D5 .5,C5 3',
+  // Mary Had a Little Lamb
+  'E5 1,D5 1,C5 1,D5 1,E5 1,E5 1,E5 2,D5 1,D5 1,D5 2,E5 1,G5 1,G5 2,E5 1,D5 1,C5 1,D5 1,E5 1,E5 1,E5 1,E5 1,D5 1,D5 1,E5 1,D5 1,C5 4',
+].map(s => s.split(',').map(t => {
+  const [name, beats] = t.trim().split(' ');
+  const semis = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[name[0]];
+  return [12 * (+name.slice(1) + 1) + semis, +beats];
+}));
+const BEAT = 0.62;
+const MUSIC_LEVEL = 0.35, MUSIC_DUCKED = 0.15;
+
+let ac, master, musicGain, sfxGain;
+let musicTimer = null, songIdx = 0, noteIdx = 0, nextTime = 0;
+let speaking = false, musicFading = false;
+
+function initAudio() {
+  if (ac) return;
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  master = ac.createGain(); master.connect(ac.destination);
+  musicGain = ac.createGain(); musicGain.gain.value = 0;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  const delay = ac.createDelay(); delay.delayTime.value = 0.38;
+  const fb = ac.createGain(); fb.gain.value = 0.25;
+  musicGain.connect(lp); lp.connect(master); lp.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(master);
+  sfxGain = ac.createGain(); sfxGain.gain.value = 0.5; sfxGain.connect(master);
+  // Safari can leave the context suspended; wake it on any tap
+  document.addEventListener('pointerdown', () => { if (ac.state !== 'running') ac.resume(); });
+}
+
+function pluck(freq, t, dur, vol, dest) {
+  const g = ac.createGain(), o = ac.createOscillator(), o2 = ac.createOscillator(), g2 = ac.createGain();
+  o.type = 'sine'; o.frequency.value = freq;
+  o2.type = 'sine'; o2.frequency.value = freq * 2; g2.gain.value = 0.12;
+  o.connect(g); o2.connect(g2); g2.connect(g); g.connect(dest);
+  const end = t + Math.max(dur, 0.4) + 0.8;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, end);
+  o.start(t); o2.start(t); o.stop(end); o2.stop(end);
+}
+
+function scheduleMusic() {
+  if (nextTime < ac.currentTime) nextTime = ac.currentTime + 0.05;
+  while (nextTime < ac.currentTime + 0.5) {
+    const song = SONGS[songIdx];
+    if (noteIdx >= song.length) { songIdx = (songIdx + 1) % SONGS.length; noteIdx = 0; nextTime += BEAT * 4; continue; }
+    const [midi, beats] = song[noteIdx++];
+    pluck(440 * 2 ** ((midi - 69) / 12), nextTime, beats * BEAT, 0.5, musicGain);
+    nextTime += beats * BEAT;
+  }
+}
+function startMusic() {
+  if (musicTimer) return;
+  songIdx = rnd(0, SONGS.length - 1); noteIdx = 0; nextTime = ac.currentTime + 0.3;
+  musicTimer = setInterval(scheduleMusic, 120);
+}
+function stopMusic() { clearInterval(musicTimer); musicTimer = null; }
+
+function setMusicLevel(ramp = 0.4) {
+  if (!ac) return;
+  const target = !settings.music || musicFading ? 0 : speaking ? MUSIC_DUCKED : MUSIC_LEVEL;
+  // setTargetAtTime glides from the live value; Safari's gain.value getter ignores ramps in progress
+  const g = musicGain.gain, now = ac.currentTime;
+  g.cancelScheduledValues(now); g.setTargetAtTime(target, now, ramp / 3);
+}
+
+function chime() {
+  if (!ac) return;
+  const t = ac.currentTime;
+  pluck(1046.5, t, 0.3, 0.35, sfxGain);
+  pluck(1568, t + 0.12, 0.3, 0.25, sfxGain);
+}
+
+/* ---------------- voice: prefer an Indian English female voice ---------------- */
+let voice = null, utterance = null;
+const voiceLang = v => v.lang.replace('_', '-').toLowerCase();
+// English voices, Indian ones first
+function englishVoices() {
+  if (!('speechSynthesis' in window)) return [];
+  const vs = speechSynthesis.getVoices().filter(v => voiceLang(v).startsWith('en'));
+  return [...vs.filter(v => voiceLang(v) === 'en-in'), ...vs.filter(v => voiceLang(v) !== 'en-in')];
+}
+function pickVoice() {
+  const vs = englishVoices();
+  const female = /isha|tara|veena|sangeeta|neerja|swara|kajal|aditi|raveena|heera|female/i;
+  const male = /\b(rishi|aman|prabhat|ravi|hemant|male)\b/i;
+  const indian = vs.filter(v => voiceLang(v) === 'en-in');
+  voice = vs.find(v => v.name === settings.voiceName)
+    || indian.find(v => female.test(v.name))
+    || indian.find(v => !male.test(v.name))
+    || indian[0]
+    || vs.find(v => /samantha|karen|moira|tessa|serena|female|zira|aria|jenny|sonia/i.test(v.name))
+    || vs[0]
+    || null;
+}
+if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.addEventListener('voiceschanged', pickVoice); }
+
+function speak(text) {
+  return new Promise(res => {
+    if (!text) return res();
+    if (!settings.voice || !('speechSynthesis' in window)) return setTimeout(res, 400);
+    if (!voice) pickVoice(); // some browsers only list voices after the page has loaded
+    if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
+    const u = utterance = new SpeechSynthesisUtterance(text);
+    if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = 'en-IN';
+    u.rate = 0.85; u.pitch = 1.05;
+    let done = false;
+    const fin = () => { if (done) return; done = true; if (utterance === u) { speaking = false; setMusicLevel(); } res(); };
+    u.onstart = () => { speaking = true; setMusicLevel(0.2); };
+    u.onend = fin; u.onerror = fin;
+    setTimeout(fin, 1500 + text.length * 110); // some browsers never fire onend
+    speechSynthesis.speak(u);
+  });
+}
+
+/* ---------------- grid ---------------- */
+const grid = $('#grid');
+let tiles = [], blanks = new Set();
+
+function buildGrid() {
+  N = settings.max;
+  tiles.forEach(t => t && t.remove());
+  tiles = [];
+  for (let n = 1; n <= N; n++) {
+    const b = document.createElement('button');
+    b.className = 'tile'; b.style.setProperty('--t', tint(n)); b.textContent = n;
+    b.addEventListener('click', () => onTile(n));
+    grid.insertBefore(b, $('#arrows'));
+    tiles[n] = b;
+  }
+  grid.style.setProperty('--cols', N / 10);
+  $('#app').classList.toggle('wide', N > 50);
+  $('#rangeLabel').textContent = `1 to ${N}`;
+  drawBridges();
+}
+function renderTiles() {
+  for (let n = 1; n <= N; n++) { tiles[n].className = 'tile'; tiles[n].textContent = blanks.has(n) ? '' : n; }
+}
+function reveal(n) { blanks.delete(n); tiles[n].textContent = n; tiles[n].classList.remove('qmark'); }
+function randomBlanks(protect) {
+  const b = new Set();
+  if (settings.fade) for (let n = 1; n <= N; n++) if (!protect.has(n) && Math.random() < .35) b.add(n);
+  return b;
+}
+
+/* ---------------- arrows ---------------- */
+const NS = 'http://www.w3.org/2000/svg';
+let hint = null; // {from, to}
+
+function rel(n) {
+  const g = grid.getBoundingClientRect(), r = tiles[n].getBoundingClientRect();
+  return { l: r.left - g.left, r: r.right - g.left, cy: (r.top + r.bottom) / 2 - g.top, h: r.height, w: r.width };
+}
+// the chalkboard arrow: bottom of column c, up the gap, into the top of column c+1
+function bridgePath(c, backwards) {
+  const A = rel(c * 10 + 10), B = rel(c * 10 + 11), gx = (A.r + B.l) / 2;
+  const fwd = `M ${A.r - 2} ${A.cy} Q ${gx} ${A.cy + A.h * .55} ${gx} ${A.cy - A.h * .3} L ${gx} ${B.cy + B.h * .3} Q ${gx} ${B.cy - B.h * .55} ${B.l + 2} ${B.cy}`;
+  const back = `M ${B.l + 2} ${B.cy} Q ${gx} ${B.cy - B.h * .55} ${gx} ${B.cy + B.h * .3} L ${gx} ${A.cy - A.h * .3} Q ${gx} ${A.cy + A.h * .55} ${A.r - 2} ${A.cy}`;
+  return backwards ? back : fwd;
+}
+function addPath(layer, d, cls, marker) {
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', d); p.setAttribute('class', cls); p.setAttribute('marker-end', `url(#${marker})`);
+  layer.appendChild(p);
+}
+function drawBridges() {
+  const layer = $('#bridges'); layer.innerHTML = '';
+  for (let c = 0; c < N / 10 - 1; c++) addPath(layer, bridgePath(c), 'bridge', 'mb');
+}
+function drawHint() {
+  const layer = $('#hintLayer'); layer.innerHTML = '';
+  if (!hint) return;
+  const { from, to } = hint, A = rel(from), B = rel(to);
+  let d;
+  if (Math.abs(from - to) === 1 && col(from) !== col(to)) {
+    d = bridgePath(Math.min(col(from), col(to)), to < from);
+  } else if (col(from) === col(to)) {
+    const bulge = A.w * .28;
+    d = `M ${A.l + 3} ${A.cy} Q ${A.l - bulge} ${(A.cy + B.cy) / 2} ${B.l + 3} ${B.cy}`;
+  } else {
+    d = to > from ? `M ${A.r - 2} ${A.cy} L ${B.l + 2} ${B.cy}` : `M ${A.l + 2} ${A.cy} L ${B.r - 2} ${B.cy}`;
+  }
+  addPath(layer, d, 'hint', 'mh');
+}
+new ResizeObserver(() => { drawBridges(); drawHint(); }).observe(grid);
+
+/* ---------------- questions ---------------- */
+// the tricky spots at the bottom/top of each column
+const edgeAfter = () => range(10, N - 10, 10);  // 10, 20, 30 …
+const edgeBefore = () => range(11, N - 9, 10);  // 11, 21, 31 …
+// pairs like 34 / 43 that both fit on the board
+const swappedPairs = () => {
+  const pairs = [];
+  for (let a = 1; a <= 9; a++) for (let b = a + 1; b <= 9; b++) if (10 * b + a <= N) pairs.push([10 * a + b, 10 * b + a]);
+  return pairs;
+};
+
+function makeQ(type) {
+  switch (type) {
+    case 'find': { const x = rnd(1, N); return { type, x, answer: x }; }
+    case 'after': { const x = Math.random() < .5 ? pick(edgeAfter()) : rnd(1, N - 1); return { type, x, answer: x + 1 }; }
+    case 'before': { const x = Math.random() < .5 ? pick(edgeBefore()) : rnd(2, N); return { type, x, answer: x - 1 }; }
+    case 'ten': {
+      // only whole tens for now: "10 more than 20", "10 less than 40"
+      const more = Math.random() < .5, x = more ? pick(range(10, N - 10, 10)) : pick(range(20, N, 10));
+      return { type, more, x, answer: more ? x + 10 : x - 10 };
+    }
+    case 'compare': {
+      let a, b; const r = Math.random();
+      if (r < .4) [a, b] = pick(swappedPairs());
+      else if (r < .7) { const e = pick(edgeAfter()); a = e - rnd(0, 2); b = e + rnd(1, 3); }
+      else { a = rnd(1, N); do b = rnd(1, N); while (Math.abs(a - b) < 2); }
+      if (Math.random() < .5) [a, b] = [b, a];
+      const bigger = Math.random() < .6;
+      return { type, a, b, bigger, answer: bigger ? Math.max(a, b) : Math.min(a, b) };
+    }
+    case 'missing': {
+      const x = Math.random() < .4 ? pick([1, N, ...edgeAfter(), ...edgeBefore()]) : rnd(1, N);
+      const swap = x > 10 && x % 10 ? (x % 10) * 10 + Math.floor(x / 10) : 0;
+      const pool = shuffle([x + 10, x - 10, swap, x + 2, x - 2].filter(n => n >= 1 && n <= N && n !== x));
+      return { type, x, answer: x, choices: [x, ...new Set(pool)].slice(0, 3) };
+    }
+  }
+}
+
+function describe(q) {
+  switch (q.type) {
+    case 'find': return { html: `Tap the number ${num(q.x)}`, say: `Tap the number ${q.x}.` };
+    case 'after': return { html: `What comes after ${num(q.x)}?`, say: `What comes after ${q.x}?` };
+    case 'before': return { html: `What comes before ${num(q.x)}?`, say: `What comes before ${q.x}?` };
+    case 'ten': {
+      const w = q.more ? 'more' : 'less';
+      return { html: `What is 10 ${w} than ${num(q.x)}?`, say: `What is 10 ${w} than ${q.x}?` };
+    }
+    case 'compare': {
+      const w = q.bigger ? 'bigger' : 'smaller';
+      return { html: `Which is <b>${w}</b>?`, say: `Which is ${w}, ${q.a} or ${q.b}?` };
+    }
+    case 'missing': return { html: 'Which number is hiding?', say: 'Which number is hiding?' };
+  }
+}
+
+function explain(q) {
+  const { x, answer } = q;
+  switch (q.type) {
+    case 'find': return `Here it is. ${x}.`;
+    case 'after':
+      return x % 10 === 0
+        ? `${x} is at the bottom. So we go up, to the top of the next line. After ${x} comes ${answer}.`
+        : `After ${x} comes ${answer}.`;
+    case 'before':
+      return x % 10 === 1
+        ? `${x} is at the top. So we go back, to the bottom of the line before. Before ${x} comes ${answer}.`
+        : `Before ${x} comes ${answer}.`;
+    case 'ten':
+      return q.more ? `10 more is one step across. 10 more than ${x} is ${answer}.`
+                    : `10 less is one step back. 10 less than ${x} is ${answer}.`;
+    case 'compare': {
+      const s = Math.min(q.a, q.b), b = Math.max(q.a, q.b);
+      return `When we count, ${s} comes first, then ${b}. So ${answer} is ${q.bigger ? 'bigger' : 'smaller'}.`;
+    }
+    case 'missing':
+      if (x === 1) return 'Before 2 comes 1.';
+      return x % 10 === 1
+        ? `${x - 1} is at the bottom, so the next one is at the top. After ${x - 1} comes ${x}.`
+        : `After ${x - 1} comes ${x}.`;
+  }
+}
+
+function praise(q, tries) {
+  const p = tries ? pick(["Yes, that's it.", 'There you go.']) : pick(['Yes!', 'Well done!', "That's right!", 'Good job!']);
+  const { x, answer } = q;
+  switch (q.type) {
+    case 'find': return `${p} That's ${x}.`;
+    case 'after': return `${p} After ${x} comes ${answer}.`;
+    case 'before': return `${p} Before ${x} comes ${answer}.`;
+    case 'ten': return `${p} 10 ${q.more ? 'more' : 'less'} than ${x} is ${answer}.`;
+    case 'compare': return `${p} ${answer} is ${q.bigger ? 'bigger' : 'smaller'}.`;
+    case 'missing': return `${p} It's ${x}.`;
+  }
+}
+
+let bag = [], retry = [], lastAnswer = 0;
+function nextQ() {
+  retry.forEach(r => r.due--);
+  const i = retry.findIndex(r => r.due <= 0);
+  if (i >= 0) return retry.splice(i, 1)[0].q;
+  let q;
+  do {
+    if (!bag.length) bag = shuffle(['after', 'before', 'after', 'before', 'compare', 'compare', 'compare', 'ten', 'ten', 'missing', 'missing']);
+    q = makeQ(bag.pop());
+  } while (q.answer === lastAnswer);
+  return q;
+}
+
+// three "tap the number" questions from different columns, to get used to the layout
+function warmupQs() {
+  const cols = shuffle(range(0, N / 10 - 1)).slice(0, 3);
+  return cols.map(c => ({ type: 'find', x: c * 10 + rnd(1, 10) })).map(q => ({ ...q, answer: q.x }));
+}
+
+/* ---------------- step 1: counting, from 1 or wherever he chooses ---------------- */
+let mode = 'count', countNext = 0, countIdle = null;
+
+function startCounting() {
+  mode = 'count'; countNext = 0; current = null;
+  blanks = randomBlanks(new Set([1]));
+  renderTiles(); hint = null; drawHint();
+  $('#choices').innerHTML = '';
+  $('#prompt').innerHTML = `Let's count!<br>Tap ${num(1)}<small>or any number to start from</small>`;
+  $('#skip').hidden = false;
+  locked = false;
+  speak("Let's count! Tap 1. Or tap any number to start from there.");
+  armIdle();
+}
+function setCountPrompt() { $('#prompt').innerHTML = `Let's count!<br>Tap ${num(countNext)}`; }
+// if he gets stuck, softly show where the next number is
+function armIdle() { clearTimeout(countIdle); countIdle = setTimeout(() => tiles[countNext || 1].classList.add('glow'), 8000); }
+
+function countTap(n) {
+  if (locked) return;
+  if (!countNext) {
+    // first tap picks the starting number
+    tiles[1].classList.remove('glow');
+    reveal(n); tiles[n].classList.add('good');
+    if (n === N) return endCounting(`${N}! That's the very end.`);
+    countNext = n + 1;
+    speak(n === 1 ? '1' : `Alright, let's start counting from ${n}.`);
+    setCountPrompt(); armIdle();
+    return;
+  }
+  if (n < countNext && tiles[n].classList.contains('good')) return;
+  if (n !== countNext) {
+    tiles[n].classList.add('dim'); setTimeout(() => tiles[n].classList.remove('dim'), 1200);
+    tiles[countNext].classList.add('glow');
+    speak(`Find ${countNext}.`);
+    return;
+  }
+  tiles[n].classList.remove('glow'); reveal(n); tiles[n].classList.add('good');
+  if (n === N) return endCounting(`${N}! Well done!`);
+  countNext++;
+  speak(n % 10 === 0 ? `${n}. Now up to the top!` : String(n));
+  setCountPrompt(); armIdle();
+}
+
+async function endCounting(message) {
+  clearTimeout(countIdle); locked = true; $('#skip').hidden = true;
+  if (message) { chime(); $('#prompt').innerHTML = message; await speak(message); await wait(500); }
+  startWarmup();
+}
+
+/* ---------------- step 2: warm-up, then step 3: quiz ---------------- */
+let current = null, locked = true, tries = 0, cards = {}, warmups = [], quizStarted = false;
+
+async function startWarmup() {
+  mode = 'quiz'; warmups = warmupQs(); quizStarted = false;
+  blanks = new Set(); renderTiles();
+  $('#prompt').innerHTML = '';
+  await speak("Now let's find some numbers.");
+  next();
+}
+
+function show(q) {
+  current = q; tries = 0; hint = null; lastAnswer = q.answer;
+  const protect = new Set([q.x, q.a, q.b].filter(Boolean));
+  if (q.type === 'missing') { protect.add(q.x - 1); protect.add(q.x + 1); q.choices = shuffle([...q.choices]); }
+  blanks = randomBlanks(protect);
+  if (q.type === 'missing') blanks.add(q.x);
+  renderTiles();
+  if (q.type === 'missing') { tiles[q.x].textContent = '?'; tiles[q.x].classList.add('qmark', 'ref'); }
+  else if (q.type === 'compare') { tiles[q.a].classList.add('ref'); tiles[q.b].classList.add('ref'); }
+  else if (q.type !== 'find') tiles[q.x].classList.add('ref');
+
+  const d = describe(q);
+  q.say = d.say;
+  $('#prompt').innerHTML = d.html;
+  const box = $('#choices'); box.innerHTML = ''; cards = {};
+  for (const n of q.type === 'compare' ? [q.a, q.b] : q.type === 'missing' ? q.choices : []) {
+    const b = document.createElement('button');
+    b.className = 'card'; b.textContent = n;
+    b.addEventListener('click', () => answer(n, b));
+    box.appendChild(b); cards[n] = b;
+  }
+  drawHint();
+  locked = false;
+  speak(q.say);
+}
+
+function onTile(n) {
+  if (mode === 'count') return countTap(n);
+  if (!current || current.type === 'missing') return;
+  if (current.type === 'compare' && n !== current.a && n !== current.b) return;
+  answer(n, tiles[n]);
+}
+
+function showHint(q) {
+  const glow = el => el && el.classList.add('glow');
+  if (q.type === 'compare' || q.type === 'missing') glow(cards[q.answer]);
+  if (q.type === 'missing') {
+    for (const n of [q.x - 1, q.x + 1]) if (n >= 1 && n <= N) { reveal(n); tiles[n].classList.add('ref'); }
+  } else glow(tiles[q.answer]);
+  if (['after', 'before', 'ten'].includes(q.type)) { hint = { from: q.x, to: q.answer }; drawHint(); }
+}
+
+async function answer(n, el) {
+  if (locked || !current) return;
+  const q = current;
+  locked = true;
+  if (n === q.answer) {
+    hint = null; drawHint();
+    document.querySelectorAll('.glow').forEach(e => e.classList.remove('glow'));
+    el.classList.add('good'); tiles[q.answer].classList.add('good'); cards[q.answer]?.classList.add('good');
+    reveal(q.answer);
+    chime();
+    await speak(praise(q, tries));
+    await wait(600);
+    next();
+    return;
+  }
+  tries++;
+  el.classList.add('dim'); setTimeout(() => el.classList.remove('dim'), 1600);
+  if (el.classList.contains('tile')) reveal(n);
+  if (tries === 1) {
+    if (!q.retry && q.type !== 'find') retry.push({ q: { ...q, retry: true }, due: 3 });
+    await speak("Let's look together.");
+    showHint(q);
+    await speak(explain(q));
+  } else {
+    await speak('Tap the glowing one.');
+  }
+  locked = false;
+}
+
+/* ---------------- time: no hard stop, gentle warnings ---------------- */
+let elapsed = 0, lastTick = 0, timerId = null, paused = false;
+let warns = 0, lastWarnAt = -Infinity, finalQ = false;
+const sessionMs = () => settings.minutes * 60000;
+
+function tick() {
+  const now = performance.now();
+  if (!document.hidden && !paused) elapsed += now - lastTick;
+  lastTick = now;
+  $('#turtle').style.setProperty('--p', Math.min(elapsed / sessionMs(), 1));
+}
+
+async function next() {
+  if (finalQ) return finish();
+  const left = sessionMs() - elapsed;
+  if (left <= 15000) {
+    finalQ = true; $('#note').textContent = 'Last one';
+    await speak('Last one!');
+  } else if (left <= 60000 && warns < 4 && elapsed - lastWarnAt >= 12000) {
+    warns++; lastWarnAt = elapsed; $('#note').textContent = '1 more minute';
+    await speak(warns === 1 ? 'Just one more minute to go!' : 'One more minute!');
+  }
+  if (warmups.length) return show(warmups.shift());
+  if (!quizStarted) {
+    quizStarted = true;
+    blanks = new Set(); renderTiles(); $('#prompt').innerHTML = '';
+    await speak('Now, some questions.');
+  }
+  show(nextQ());
+}
+
+const ANIMALS = [['🐬', 'dolphin'], ['🐒', 'monkey'], ['🐘', 'elephant'], ['🐢', 'turtle'], ['🐼', 'panda'], ['🦒', 'giraffe'],
+                 ['🐧', 'penguin'], ['🐨', 'koala'], ['🦉', 'owl'], ['🐳', 'whale'], ['🐰', 'bunny'], ['🦆', 'duck']];
+
+async function finish() {
+  current = null; locked = true; clearInterval(timerId); clearTimeout(countIdle);
+  const [emoji, name] = pick(ANIMALS);
+  $('#animal').textContent = emoji;
+  $('#bye').textContent = `Bye bye from the ${name}`;
+  $('#end').hidden = false;
+  musicFading = true; setMusicLevel(5);
+  setTimeout(() => { if (musicFading) stopMusic(); }, 6000);
+  await speak(`All done! See you tomorrow. Bye bye from the ${name}!`);
+}
+
+let sessionStarted = false;
+function startSession() {
+  initAudio(); ac.resume();
+  musicFading = false; startMusic(); setMusicLevel(1.5);
+  if (N !== settings.max) buildGrid();
+  sessionStarted = true;
+  bag = []; retry = []; lastAnswer = 0; current = null; locked = true; warmups = [];
+  elapsed = 0; warns = 0; lastWarnAt = -Infinity; finalQ = false; paused = false;
+  $('#note').textContent = '';
+  lastTick = performance.now(); clearInterval(timerId); timerId = setInterval(tick, 1000); tick();
+  $('#start').hidden = true; $('#end').hidden = true;
+  startCounting();
+}
+
+/* ---------------- controls ---------------- */
+buildGrid();
+$('#play').addEventListener('click', startSession);
+$('#skip').addEventListener('click', () => {
+  if (mode !== 'count' || locked) return;
+  window.speechSynthesis?.cancel();
+  endCounting();
+});
+$('#say').addEventListener('click', () => {
+  if (mode === 'count') speak(countNext ? `Tap ${countNext}.` : 'Tap 1, or any number.');
+  else if (current) speak(current.say);
+});
+
+const musicBtn = $('#musicBtn');
+function syncMusicBtn() { musicBtn.classList.toggle('off', !settings.music); }
+musicBtn.addEventListener('click', () => { settings.music = !settings.music; saveSettings(); syncMusicBtn(); syncSettingsUI(); setMusicLevel(); });
+syncMusicBtn();
+
+// settings open on a long press so little fingers don't find them
+let pressTimer;
+const gear = $('#gear');
+gear.addEventListener('pointerdown', () => { pressTimer = setTimeout(openSettings, 900); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(e => gear.addEventListener(e, () => clearTimeout(pressTimer)));
+gear.addEventListener('contextmenu', e => e.preventDefault());
+
+function syncSettingsUI() {
+  document.querySelectorAll('#range button').forEach(b => b.classList.toggle('on', +b.dataset.r === settings.max));
+  document.querySelectorAll('#mins button').forEach(b => b.classList.toggle('on', +b.dataset.m === settings.minutes));
+  $('#fadeOn').checked = settings.fade;
+  $('#musicOn').checked = settings.music;
+  $('#voiceOn').checked = settings.voice;
+  const sel = $('#voicePick');
+  sel.innerHTML = '<option value="">Automatic (Indian English first)</option>'
+    + englishVoices().map(v => `<option>${v.name}</option>`).join('');
+  sel.value = englishVoices().some(v => v.name === settings.voiceName) ? settings.voiceName : '';
+}
+function openSettings() { syncSettingsUI(); paused = true; $('#settings').hidden = false; }
+function closeSettings() { $('#settings').hidden = true; paused = false; lastTick = performance.now(); }
+
+// a new range needs a new board, so it starts a fresh session (or just redraws the start screen)
+document.querySelectorAll('#range button').forEach(b => b.addEventListener('click', () => {
+  if (+b.dataset.r === settings.max) return;
+  settings.max = +b.dataset.r; saveSettings(); syncSettingsUI();
+  closeSettings();
+  if (sessionStarted && $('#end').hidden) startSession(); else buildGrid();
+}));
+document.querySelectorAll('#mins button').forEach(b => b.addEventListener('click', () => {
+  settings.minutes = +b.dataset.m; saveSettings(); syncSettingsUI(); tick();
+}));
+$('#fadeOn').addEventListener('change', e => { settings.fade = e.target.checked; saveSettings(); });
+$('#musicOn').addEventListener('change', e => { settings.music = e.target.checked; saveSettings(); syncMusicBtn(); setMusicLevel(); });
+$('#voiceOn').addEventListener('change', e => { settings.voice = e.target.checked; saveSettings(); if (!settings.voice) window.speechSynthesis?.cancel(); });
+$('#voicePick').addEventListener('change', e => { settings.voiceName = e.target.value; saveSettings(); pickVoice(); speak('What comes after 20?'); });
+$('#testVoice').addEventListener('click', () => { pickVoice(); speak('What comes after 20?'); });
+$('#close').addEventListener('click', closeSettings);
+$('#restart').addEventListener('click', () => { closeSettings(); startSession(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#settings').hidden) closeSettings(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# scratchpad for Claude Code prompts
+prompt.md
+
+.DS_Store
+.local-server.pid
+.local-server.log
