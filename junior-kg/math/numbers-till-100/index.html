@@ -363,18 +363,23 @@ function englishVoices() {
   const vs = speechSynthesis.getVoices().filter(v => voiceLang(v).startsWith('en'));
   return [...vs.filter(v => voiceLang(v) === 'en-in'), ...vs.filter(v => voiceLang(v) !== 'en-in')];
 }
+// Premium/Enhanced/Natural voices sound human; the compact ones sound robotic.
+// Safari can list e.g. two "Isha"s, so the quality is read from the voiceURI too.
+const voiceQuality = v => /premium/i.test(v.name + v.voiceURI) ? 3
+  : /enhanced|natural|neural/i.test(v.name + v.voiceURI) ? 2 : 0;
+const voiceLabel = v => v.name + (voiceQuality(v) && !/\(.+\)/.test(v.name) ? (voiceQuality(v) === 3 ? ' (Premium)' : ' (Enhanced)') : '');
+
+function voiceScore(v) {
+  const female = /isha|tara|veena|sangeeta|neerja|swara|kajal|aditi|raveena|heera|female|samantha|karen|moira|tessa|serena|zira|aria|jenny|sonia/i;
+  const male = /\b(rishi|aman|prabhat|ravi|hemant|male)\b/i;
+  return (voiceLang(v) === 'en-in' ? 100 : 0)
+    + voiceQuality(v) * 15
+    + (female.test(v.name) ? 20 : male.test(v.name) ? 0 : 10);
+}
 function pickVoice() {
   const vs = englishVoices();
-  const female = /isha|tara|veena|sangeeta|neerja|swara|kajal|aditi|raveena|heera|female/i;
-  const male = /\b(rishi|aman|prabhat|ravi|hemant|male)\b/i;
-  const indian = vs.filter(v => voiceLang(v) === 'en-in');
-  voice = vs.find(v => v.name === settings.voiceName)
-    || indian.find(v => female.test(v.name))
-    || indian.find(v => !male.test(v.name))
-    || indian[0]
-    || vs.find(v => /samantha|karen|moira|tessa|serena|female|zira|aria|jenny|sonia/i.test(v.name))
-    || vs[0]
-    || null;
+  voice = vs.find(v => v.voiceURI === settings.voiceName || v.name === settings.voiceName)
+    || vs.reduce((best, v) => (!best || voiceScore(v) > voiceScore(best) ? v : best), null);
 }
 if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.addEventListener('voiceschanged', pickVoice); }
 
@@ -805,9 +810,11 @@ function syncSettingsUI() {
   $('#musicOn').checked = settings.music;
   $('#voiceOn').checked = settings.voice;
   const sel = $('#voicePick');
-  sel.innerHTML = '<option value="">Automatic (Indian English first)</option>'
-    + englishVoices().map(v => `<option>${v.name}</option>`).join('');
-  sel.value = englishVoices().some(v => v.name === settings.voiceName) ? settings.voiceName : '';
+  const vs = englishVoices();
+  sel.innerHTML = '<option value="">Automatic (best Indian English voice)</option>'
+    + vs.map(v => `<option value="${v.voiceURI}">${voiceLabel(v)}</option>`).join('');
+  const chosen = vs.find(v => v.voiceURI === settings.voiceName || v.name === settings.voiceName);
+  sel.value = chosen ? chosen.voiceURI : '';
 }
 function openSettings() { syncSettingsUI(); paused = true; $('#settings').hidden = false; }
 function closeSettings() { $('#settings').hidden = true; paused = false; lastTick = performance.now(); }
