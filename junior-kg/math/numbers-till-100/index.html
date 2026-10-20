@@ -302,9 +302,7 @@ function initAudio() {
   master = ac.createGain(); master.connect(ac.destination);
   musicGain = ac.createGain(); musicGain.gain.value = 0;
   const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
-  const delay = ac.createDelay(); delay.delayTime.value = 0.38;
-  const fb = ac.createGain(); fb.gain.value = 0.25;
-  musicGain.connect(lp); lp.connect(master); lp.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(master);
+  musicGain.connect(lp); lp.connect(master);
   sfxGain = ac.createGain(); sfxGain.gain.value = 0.5; sfxGain.connect(master);
   // Safari can leave the context suspended; wake it on any tap
   document.addEventListener('pointerdown', () => { if (ac.state !== 'running') ac.resume(); });
