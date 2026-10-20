@@ -358,7 +358,9 @@ const voiceLang = v => v.lang.replace('_', '-').toLowerCase();
 // English voices, Indian ones first
 function englishVoices() {
   if (!('speechSynthesis' in window)) return [];
-  const vs = speechSynthesis.getVoices().filter(v => voiceLang(v).startsWith('en'));
+  // Apple's joke voices (Bubbles, Zarvox…) aren't for this game
+  const novelty = /^(albert|bad news|bahh|bells|boing|bubbles|cellos|fred|good news|jester|junior|kathy|organ|ralph|superstar|trinoids|whisper|wobble|zarvox)\b/i;
+  const vs = speechSynthesis.getVoices().filter(v => voiceLang(v).startsWith('en') && !novelty.test(v.name));
   return [...vs.filter(v => voiceLang(v) === 'en-in'), ...vs.filter(v => voiceLang(v) !== 'en-in')];
 }
 // Premium/Enhanced/Natural voices sound human; the compact ones sound robotic.
