@@ -4,3 +4,7 @@ prompt.md
 .DS_Store
 .local-server.pid
 .local-server.log
+
+# API keys and generated voice samples
+.env
+voice-samples/

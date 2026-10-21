@@ -383,10 +383,72 @@ function pickVoice() {
 }
 if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.addEventListener('voiceschanged', pickVoice); }
 
-function speak(text) {
+/* recorded clips (made by tools/voice_clips.py), with the device voice as the fallback.
+   A line is cut into sentences, and " | " marks extra cuts inside one, so
+   "Which is bigger, | 34 | or 43?" plays three clips instead of needing one per pair. */
+const CLIPS = 'voice/';
+let clipIndex = {}, clipCache = new Map(), clipPlay = null, speechId = 0;
+fetch(CLIPS + 'clips.json').then(r => r.json()).then(j => { clipIndex = j; }).catch(() => {});
+const clipPieces = text => text.split(/(?<=[.!?])\s+/).map(s => s.split(' | ').map(p => p.trim().replace(/\.$/, '')).filter(Boolean));
+const plain = text => text.replace(/ \| /g, ' ');
+const useClips = () => !settings.voiceName && ac;
+
+function loadClip(key) {
+  if (!clipCache.has(key)) {
+    clipCache.set(key, fetch(CLIPS + clipIndex[key])
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then(b => new Promise((res, rej) => ac.decodeAudioData(b, res, rej))));
+  }
+  return clipCache.get(key);
+}
+// fetch clips ahead of time so there's no pause before they're needed
+function preload(...texts) {
+  if (!useClips()) return;
+  for (const t of texts) for (const k of clipPieces(t).flat()) if (k in clipIndex) loadClip(k).catch(() => {});
+}
+function stopClips() {
+  if (!clipPlay) return;
+  clipPlay.sources.forEach(s => { try { s.stop(); } catch {} });
+  clearTimeout(clipPlay.timer); clipPlay.done();
+  clipPlay = null; speaking = false; setMusicLevel();
+}
+function stopSpeech() { speechId++; stopClips(); window.speechSynthesis?.cancel(); }
+
+// true if the whole line was played from clips; false means use the device voice
+async function playClips(text, id) {
+  const sentences = clipPieces(text), keys = sentences.flat();
+  if (!keys.length || !keys.every(k => k in clipIndex)) return false;
+  let bufs;
+  try { bufs = await Promise.all(keys.map(loadClip)); } catch { return false; }
+  if (id !== speechId) return true;
+  window.speechSynthesis?.cancel();
+  speaking = true; setMusicLevel(0.2);
+  const sources = [];
+  let t = ac.currentTime + 0.05, i = 0;
+  sentences.forEach(s => s.forEach((k, j) => {
+    const src = ac.createBufferSource();
+    src.buffer = bufs[i++]; src.connect(master); src.start(t); sources.push(src);
+    t += src.buffer.duration + (j < s.length - 1 ? 0.05 : 0.35); // short gap inside a sentence, longer after it
+  }));
+  await new Promise(done => {
+    clipPlay = { sources, done, timer: setTimeout(done, (t - 0.35 - ac.currentTime) * 1000) };
+  });
+  if (id === speechId) { clipPlay = null; speaking = false; setMusicLevel(); }
+  return true;
+}
+
+async function speak(text) {
+  stopClips();
+  const id = ++speechId;
+  if (!text) return;
+  if (!settings.voice) return wait(400);
+  if (useClips() && await playClips(text, id)) return;
+  if (id === speechId) return speakDevice(plain(text));
+}
+
+function speakDevice(text) {
   return new Promise(res => {
-    if (!text) return res();
-    if (!settings.voice || !('speechSynthesis' in window)) return setTimeout(res, 400);
+    if (!('speechSynthesis' in window)) return setTimeout(res, 400);
     if (!voice) pickVoice(); // some browsers only list voices after the page has loaded
     if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
     const u = utterance = new SpeechSynthesisUtterance(text);
@@ -522,7 +584,7 @@ function describe(q) {
     }
     case 'compare': {
       const w = q.bigger ? 'bigger' : 'smaller';
-      return { html: `Which is <b>${w}</b>?`, say: `Which is ${w}, ${q.a} or ${q.b}?` };
+      return { html: `Which is <b>${w}</b>?`, say: `Which is ${w}, | ${q.a} | or ${q.b}?` };
     }
     case 'missing': return { html: 'Which number is hiding?', say: 'Which number is hiding?' };
   }
@@ -545,7 +607,7 @@ function explain(q) {
                     : `10 less is one step back. 10 less than ${x} is ${answer}.`;
     case 'compare': {
       const s = Math.min(q.a, q.b), b = Math.max(q.a, q.b);
-      return `When we count, ${s} comes first, then ${b}. So ${answer} is ${q.bigger ? 'bigger' : 'smaller'}.`;
+      return `When we count, | ${s} | comes first, then ${b}. So ${answer} is ${q.bigger ? 'bigger' : 'smaller'}.`;
     }
     case 'missing':
       if (x === 1) return 'Before 2 comes 1.';
@@ -555,8 +617,8 @@ function explain(q) {
   }
 }
 
-function praise(q, tries) {
-  const p = tries ? pick(["Yes, that's it.", 'There you go.']) : pick(['Yes!', 'Well done!', "That's right!", 'Good job!']);
+const PRAISE = ['Yes!', 'Well done!', "That's right!", 'Good job!'], PRAISE_AGAIN = ["Yes, that's it.", 'There you go.'];
+function praise(q, tries, p = pick(tries ? PRAISE_AGAIN : PRAISE)) {
   const { x, answer } = q;
   switch (q.type) {
     case 'find': return `${p} That's ${x}.`;
@@ -672,6 +734,7 @@ function show(q) {
   drawHint();
   locked = false;
   speak(q.say);
+  preload(explain(q), praise(q, 0, ''));
 }
 
 function onTile(n) {
@@ -750,6 +813,11 @@ async function next() {
   show(nextQ());
 }
 
+// lines said outside the questions (allLines and preload use this list)
+const SAY = ["Let's count! Tap 1. Or tap any number to start from there.", "Now let's find some numbers.", "Let's look together.",
+             'Tap the glowing one.', 'Last one!', 'Just one more minute to go!', 'One more minute!', 'Now, some questions.',
+             'Tap 1, or any number.', 'Now up to the top!', "That's the very end."];
+
 const ANIMALS = [['🐬', 'dolphin'], ['🐒', 'monkey'], ['🐘', 'elephant'], ['🐢', 'turtle'], ['🐼', 'panda'], ['🦒', 'giraffe'],
                  ['🐧', 'penguin'], ['🐨', 'koala'], ['🦉', 'owl'], ['🐳', 'whale'], ['🐰', 'bunny'], ['🦆', 'duck']];
 
@@ -775,6 +843,7 @@ function startSession() {
   $('#note').textContent = '';
   lastTick = performance.now(); clearInterval(timerId); timerId = setInterval(tick, 1000); tick();
   $('#start').hidden = true; $('#end').hidden = true;
+  preload(...SAY, ...PRAISE, ...PRAISE_AGAIN, ...range(1, N).map(String));
   startCounting();
 }
 
@@ -783,7 +852,7 @@ buildGrid();
 $('#play').addEventListener('click', startSession);
 $('#skip').addEventListener('click', () => {
   if (mode !== 'count' || locked) return;
-  window.speechSynthesis?.cancel();
+  stopSpeech();
   endCounting();
 });
 $('#say').addEventListener('click', () => {
@@ -811,7 +880,7 @@ function syncSettingsUI() {
   $('#voiceOn').checked = settings.voice;
   const sel = $('#voicePick');
   const vs = englishVoices();
-  sel.innerHTML = '<option value="">Automatic (best Indian English voice)</option>'
+  sel.innerHTML = '<option value="">Recorded voice (Leda)</option>'
     + vs.map(v => `<option value="${v.voiceURI}">${voiceLabel(v)}</option>`).join('');
   const chosen = vs.find(v => v.voiceURI === settings.voiceName || v.name === settings.voiceName);
   sel.value = chosen ? chosen.voiceURI : '';
@@ -831,12 +900,37 @@ document.querySelectorAll('#mins button').forEach(b => b.addEventListener('click
 }));
 $('#fadeOn').addEventListener('change', e => { settings.fade = e.target.checked; saveSettings(); });
 $('#musicOn').addEventListener('change', e => { settings.music = e.target.checked; saveSettings(); syncMusicBtn(); setMusicLevel(); });
-$('#voiceOn').addEventListener('change', e => { settings.voice = e.target.checked; saveSettings(); if (!settings.voice) window.speechSynthesis?.cancel(); });
-$('#voicePick').addEventListener('change', e => { settings.voiceName = e.target.value; saveSettings(); pickVoice(); speak('What comes after 20?'); });
-$('#testVoice').addEventListener('click', () => { pickVoice(); speak('What comes after 20?'); });
+$('#voiceOn').addEventListener('change', e => { settings.voice = e.target.checked; saveSettings(); if (!settings.voice) stopSpeech(); });
+$('#voicePick').addEventListener('change', e => { settings.voiceName = e.target.value; saveSettings(); testVoice(); });
+$('#testVoice').addEventListener('click', testVoice);
+function testVoice() { initAudio(); ac.resume(); pickVoice(); speak('What comes after 20?'); }
 $('#close').addEventListener('click', closeSettings);
 $('#restart').addEventListener('click', () => { closeSettings(); startSession(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#settings').hidden) closeSettings(); });
+
+// every piece of speech, for tools/voice_clips.py, which opens the page with #lines
+function allLines() {
+  const lines = [...SAY, ...PRAISE, ...PRAISE_AGAIN, 'What comes after 20?'], keepN = N;
+  N = 100;
+  for (const m of [50, 100]) lines.push(`${m}! That's the very end.`, `${m}! Well done!`);
+  for (const [, name] of ANIMALS) lines.push(`All done! See you tomorrow. Bye bye from the ${name}!`);
+  const qs = [];
+  for (let x = 1; x <= N; x++) {
+    lines.push(String(x), `Alright, let's start counting from ${x}.`, `Find ${x}.`, `Tap ${x}.`, `${x}. Now up to the top!`);
+    qs.push({ type: 'find', x, answer: x }, { type: 'missing', x, answer: x });
+    if (x < N) qs.push({ type: 'after', x, answer: x + 1 });
+    if (x > 1) qs.push({ type: 'before', x, answer: x - 1 });
+    if (x % 10 === 0 && x < N) qs.push({ type: 'ten', more: true, x, answer: x + 10 });
+    if (x % 10 === 0 && x > 10) qs.push({ type: 'ten', more: false, x, answer: x - 10 });
+    for (let b = 1; b <= N; b++) if (b !== x) for (const bigger of [true, false]) {
+      qs.push({ type: 'compare', a: x, b, bigger, answer: bigger ? Math.max(x, b) : Math.min(x, b) });
+    }
+  }
+  for (const q of qs) lines.push(describe(q).say, explain(q), praise(q, 0, ''));
+  N = keepN;
+  return [...new Set(lines.flatMap(t => clipPieces(t).flat()))];
+}
+if (location.hash === '#lines') document.body.innerHTML = `<pre id="lines">${JSON.stringify(allLines())}</pre>`;
 </script>
 </body>
 </html>
