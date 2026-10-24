@@ -27,6 +27,7 @@
     --d8: #E1E6F5;
     --d9: #DCF0EE;
     --coral: #E3A08C;
+    --ring: #D27C63;  /* rings around tiles and cards: darker than --coral so they're easy to spot */
     --good: #D3EBDA;
     --goodline: #94C7A3;
   }
@@ -110,13 +111,14 @@
     transition: background .4s, opacity .4s, box-shadow .4s, color .4s;
   }
   .tile.qmark { color: var(--coral); font-weight: 800; }
-  .tile.ref, .card.ref { box-shadow: inset 0 0 0 3px var(--coral); }
+  .tile.ref, .card.ref { box-shadow: inset 0 0 0 4px var(--ring); }
+  .tile.full { box-shadow: inset 0 0 0 3px #A9C8DB; }  /* the full columns, when explaining tens */
   .tile.dim, .card.dim { opacity: .4; }
   .tile.glow, .card.glow { animation: breathe 2.4s ease-in-out infinite; }
   .tile.good, .card.good { background: var(--good); box-shadow: inset 0 0 0 3px var(--goodline); animation: none; }
   @keyframes breathe {
-    0%, 100% { box-shadow: inset 0 0 0 3px rgba(227,160,140,.3); }
-    50% { box-shadow: inset 0 0 0 4px rgba(227,160,140,1); }
+    0%, 100% { box-shadow: inset 0 0 0 3px rgba(210,124,99,.35); }
+    50% { box-shadow: inset 0 0 0 5px rgba(210,124,99,1); }
   }
 
   #arrows { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
@@ -390,7 +392,7 @@ if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.addEventListener
 /* recorded clips (made by tools/voice_clips.py), with the device voice as the fallback.
    A line is cut into sentences, and " | " marks extra cuts inside one, so
    "Which is bigger, | 34 | or 43?" plays three clips instead of needing one per pair. */
-const CLIPS = 'voice/';
+const CLIPS = '../../../voice/'; // shared by every game, at the root of the repo
 let clipIndex = {}, clipCache = new Map(), clipPlay = null, speechId = 0;
 fetch(CLIPS + 'clips.json').then(r => r.json()).then(j => { clipIndex = j; }).catch(() => {});
 const clipPieces = text => text.split(/(?<=[.!?])\s+/).map(s => s.split(' | ').map(p => p.trim().replace(/\.$/, '')).filter(Boolean));
@@ -549,6 +551,20 @@ const swappedPairs = () => {
   return pairs;
 };
 
+const tensW = t => t === 1 ? '1 ten' : `${t} tens`;
+const onesW = o => o === 1 ? '1 one' : `${o} ones`;
+const tensOnes = x => [Math.floor(x / 10), x % 10];
+// a number with at least one ten, and no hundreds
+const placeX = () => rnd(10, Math.min(N, 99));
+// "42: how many tens?" then "and how many ones?"; the cards include the other digit,
+// and the tens cards include t + 1, since 42 sits in the 5th column
+function splitQ(x, part = 'tens') {
+  const [t, o] = tensOnes(x), answer = part === 'tens' ? t : o;
+  const pool = part === 'tens' ? [o, t + 1, t - 1, t + 2].filter(n => n >= 1 && n <= N / 10)
+                               : [t, o + 1, o - 1, o + 2, o - 2].filter(n => n >= 0 && n <= 9);
+  return { type: 'split', part, x, answer, choices: [answer, ...new Set(pool.filter(n => n !== answer))].slice(0, 3) };
+}
+
 function makeQ(type) {
   switch (type) {
     case 'find': { const x = rnd(1, N); return { type, x, answer: x }; }
@@ -574,6 +590,8 @@ function makeQ(type) {
       const pool = shuffle([x + 10, x - 10, swap, x + 2, x - 2].filter(n => n >= 1 && n <= N && n !== x));
       return { type, x, answer: x, choices: [x, ...new Set(pool)].slice(0, 3) };
     }
+    case 'make': { const x = placeX(); return { type, x, answer: x }; }
+    case 'split': return splitQ(placeX());
   }
 }
 
@@ -591,6 +609,14 @@ function describe(q) {
       return { html: `Which is <b>${w}</b>?`, say: `Which is ${w}, | ${q.a} | or ${q.b}?` };
     }
     case 'missing': return { html: 'Which number is hiding?', say: 'Which number is hiding?' };
+    case 'make': {
+      const [t, o] = tensOnes(q.x);
+      return { html: `What number is<br><b>${t}</b> ${t === 1 ? 'ten' : 'tens'} and <b>${o}</b> ${o === 1 ? 'one' : 'ones'}?`,
+               say: `What number is | ${tensW(t)} | and ${onesW(o)}?` };
+    }
+    case 'split': return q.part === 'tens'
+      ? { html: `${num(q.x)}<br>How many <b>tens</b>?`, say: `${q.x}. How many tens?` }
+      : { html: `${num(q.x)}<br>And how many <b>ones</b>?`, say: 'And how many ones?' };
   }
 }
 
@@ -618,6 +644,12 @@ function explain(q) {
       return x % 10 === 1
         ? `${x - 1} is at the bottom, so the next one is at the top. After ${x - 1} comes ${x}.`
         : `After ${x - 1} comes ${x}.`;
+    case 'make': case 'split': {
+      // the full columns are the tens, then count on the ones one by one
+      const [t, o] = tensOnes(x);
+      return o ? `${tensW(t)} is ${t * 10}. Then ${o} more. ${range(t * 10 + 1, x).join('. ')}.`
+               : `${tensW(t)} is ${x}. And 0 ones.`;
+    }
   }
 }
 
@@ -631,6 +663,10 @@ function praise(q, tries, p = pick(tries ? PRAISE_AGAIN : PRAISE)) {
     case 'ten': return `${p} 10 ${q.more ? 'more' : 'less'} than ${x} is ${answer}.`;
     case 'compare': return `${p} ${answer} is ${q.bigger ? 'bigger' : 'smaller'}.`;
     case 'missing': return `${p} It's ${x}.`;
+    case 'make': case 'split': {
+      const [t, o] = tensOnes(x);
+      return q.part === 'tens' ? `${p} ${x} | has ${tensW(t)}.` : `${p} ${tensW(t)} | and ${onesW(o)} | make ${x}.`;
+    }
   }
 }
 
@@ -641,7 +677,7 @@ function nextQ() {
   if (i >= 0) return retry.splice(i, 1)[0].q;
   let q;
   do {
-    if (!bag.length) bag = shuffle(['after', 'before', 'after', 'before', 'compare', 'compare', 'compare', 'ten', 'ten', 'missing', 'missing']);
+    if (!bag.length) bag = shuffle(['after', 'before', 'after', 'before', 'compare', 'compare', 'compare', 'ten', 'ten', 'missing', 'missing', 'make', 'split']);
     q = makeQ(bag.pop());
   } while (q.answer === lastAnswer);
   return q;
@@ -717,19 +753,20 @@ async function startWarmup() {
 function show(q) {
   current = q; tries = 0; hint = null; lastAnswer = q.answer;
   const protect = new Set([q.x, q.a, q.b].filter(Boolean));
-  if (q.type === 'missing') { protect.add(q.x - 1); protect.add(q.x + 1); q.choices = shuffle([...q.choices]); }
+  if (q.type === 'missing') { protect.add(q.x - 1); protect.add(q.x + 1); }
+  if (q.choices) q.choices = shuffle([...q.choices]);
   blanks = randomBlanks(protect);
   if (q.type === 'missing') blanks.add(q.x);
   renderTiles();
   if (q.type === 'missing') { tiles[q.x].textContent = '?'; tiles[q.x].classList.add('qmark', 'ref'); }
   else if (q.type === 'compare') { tiles[q.a].classList.add('ref'); tiles[q.b].classList.add('ref'); }
-  else if (q.type !== 'find') tiles[q.x].classList.add('ref');
+  // no ring on 43 for "what comes after 43?": he took it as the number to tap
 
   const d = describe(q);
   q.say = d.say;
   $('#prompt').innerHTML = d.html;
   const box = $('#choices'); box.innerHTML = ''; cards = {};
-  for (const n of q.type === 'compare' ? [q.a, q.b] : q.type === 'missing' ? q.choices : []) {
+  for (const n of q.type === 'compare' ? [q.a, q.b] : q.choices || []) {
     const b = document.createElement('button');
     b.className = 'card'; b.textContent = n;
     b.addEventListener('click', () => answer(n, b));
@@ -743,18 +780,25 @@ function show(q) {
 
 function onTile(n) {
   if (mode === 'count') return countTap(n);
-  if (!current || current.type === 'missing') return;
+  if (!current || current.choices) return; // answered with the cards
   if (current.type === 'compare' && n !== current.a && n !== current.b) return;
   answer(n, tiles[n]);
 }
 
 function showHint(q) {
   const glow = el => el && el.classList.add('glow');
-  if (q.type === 'compare' || q.type === 'missing') glow(cards[q.answer]);
+  glow(cards[q.answer]);
   if (q.type === 'missing') {
     for (const n of [q.x - 1, q.x + 1]) if (n >= 1 && n <= N) { reveal(n); tiles[n].classList.add('ref'); }
+  } else if (q.type === 'make' || q.type === 'split') {
+    const tens = Math.floor(q.x / 10) * 10;
+    for (let n = 1; n <= q.x; n++) { reveal(n); tiles[n].classList.add(n <= tens ? 'full' : 'ref'); }
+    if (q.type === 'make') glow(tiles[q.x]);
   } else glow(tiles[q.answer]);
-  if (['after', 'before', 'ten'].includes(q.type)) { hint = { from: q.x, to: q.answer }; drawHint(); }
+  if (['after', 'before', 'ten'].includes(q.type)) {
+    tiles[q.x].classList.add('ref');
+    hint = { from: q.x, to: q.answer }; drawHint();
+  }
 }
 
 async function answer(n, el) {
@@ -764,11 +808,12 @@ async function answer(n, el) {
   if (n === q.answer) {
     hint = null; drawHint();
     document.querySelectorAll('.glow').forEach(e => e.classList.remove('glow'));
-    el.classList.add('good'); tiles[q.answer].classList.add('good'); cards[q.answer]?.classList.add('good');
-    reveal(q.answer);
+    el.classList.add('good'); cards[q.answer]?.classList.add('good');
+    if (q.type !== 'split') { tiles[q.answer].classList.add('good'); reveal(q.answer); }
     chime();
     await speak(praise(q, tries));
     await wait(600);
+    if (q.type === 'split' && q.part === 'tens') return show({ ...splitQ(q.x, 'ones'), retry: q.retry });
     next();
     return;
   }
@@ -776,7 +821,8 @@ async function answer(n, el) {
   el.classList.add('dim'); setTimeout(() => el.classList.remove('dim'), 1600);
   if (el.classList.contains('tile')) reveal(n);
   if (tries === 1) {
-    if (!q.retry && q.type !== 'find') retry.push({ q: { ...q, retry: true }, due: 3 });
+    // a missed tens/ones question comes back from its first part
+    if (!q.retry && q.type !== 'find') retry.push({ q: { ...(q.type === 'split' ? splitQ(q.x) : q), retry: true }, due: 3 });
     await speak("Let's look together.");
     showHint(q);
     await speak(explain(q));
@@ -924,6 +970,7 @@ function allLines() {
     if (x > 1) qs.push({ type: 'before', x, answer: x - 1 });
     if (x % 10 === 0 && x < N) qs.push({ type: 'ten', more: true, x, answer: x + 10 });
     if (x % 10 === 0 && x > 10) qs.push({ type: 'ten', more: false, x, answer: x - 10 });
+    if (x >= 10 && x <= 99) qs.push({ type: 'make', x, answer: x }, splitQ(x), splitQ(x, 'ones'));
     for (let b = 1; b <= N; b++) if (b !== x) for (const bigger of [true, false]) {
       qs.push({ type: 'compare', a: x, b, bigger, answer: bigger ? Math.max(x, b) : Math.min(x, b) });
     }

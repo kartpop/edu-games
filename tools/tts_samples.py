@@ -3,14 +3,16 @@
 
 usage: python3 tools/tts_samples.py [--model M ...] [--voice V ...] [--lang en-IN] [--style strong] [--out DIR]
 
-Reads GEMINI_API_KEY from the environment or from edu-games/.env (gitignored).
+Calls Gemini on Google Cloud's Gemini Enterprise Agent Platform (formerly Vertex AI), billed to the
+key's project. Reads from the environment or from edu-games/.env (gitignored):
+  GOOGLE_CLOUD_API_KEY   an API key bound to a service account with the Vertex AI User role
+  GOOGLE_CLOUD_LOCATION  optional, default "global"
 Writes one .wav per voice, each reading the same few game lines.
 """
 import argparse, base64, json, os, re, sys, time, urllib.error, urllib.request, wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-API = 'https://generativelanguage.googleapis.com/v1beta'
 
 # female Gemini voices, with Google's one-word description
 VOICES = {'Sulafat': 'warm', 'Achernar': 'soft', 'Vindemiatrix': 'gentle', 'Leda': 'youthful', 'Aoede': 'breezy'}
@@ -31,16 +33,20 @@ Yes! 43 is bigger.
 All done! See you tomorrow. Bye bye from the elephant!"""
 
 
-def api_key():
-    key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+def setting(name):
+    value = os.environ.get(name)
     env = ROOT / '.env'
-    if not key and env.exists():
-        m = re.search(r'^\s*(?:export\s+)?GEMINI_API_KEY\s*=\s*["\']?([^"\'\s]+)', env.read_text(), re.M)
-        key = m and m.group(1)
-    return key or sys.exit('No GEMINI_API_KEY found (environment or edu-games/.env).')
+    if not value and env.exists():
+        m = re.search(rf'^\s*(?:export\s+)?{name}\s*=\s*["\']?([^"\'\s]+)', env.read_text(), re.M)
+        value = m and m.group(1)
+    return value
 
 
-KEY = api_key()
+KEY = setting('GOOGLE_CLOUD_API_KEY') or sys.exit('No GOOGLE_CLOUD_API_KEY found (environment or edu-games/.env).')
+LOCATION = setting('GOOGLE_CLOUD_LOCATION') or 'global'
+HOST = 'aiplatform.googleapis.com' if LOCATION == 'global' else f'{LOCATION}-aiplatform.googleapis.com'
+API = f'https://{HOST}/v1/publishers/google'  # + models/<model>:generateContent
+DEFAULT_MODEL = 'gemini-3.8-flash-tts'
 
 
 def call(path, body=None):
@@ -57,14 +63,10 @@ def call(path, body=None):
                 time.sleep(wait)
                 continue
             sys.exit(f'{e.code}: {e.read().decode()[:400]}')
-
-
-def tts_model():
-    names = [m['name'].split('/')[-1] for m in call('models?pageSize=1000')['models'] if 'tts' in m['name']]
-    if not names:
-        sys.exit('This key has no text-to-speech models available.')
-    # prefer pro over flash, then the newest version
-    return sorted(names, key=lambda n: ('pro' in n, re.findall(r'\d+(?:\.\d+)?', n)), reverse=True)[0]
+        except (TimeoutError, OSError) as e:  # a slow or dropped connection: try again
+            if attempt == 4:
+                raise
+            print(f'  {e!r}, retrying')
 
 
 def request(voice, text, style=STYLE, lang=None):
@@ -72,7 +74,7 @@ def request(voice, text, style=STYLE, lang=None):
     if lang:
         speech['languageCode'] = lang
     return {
-        'contents': [{'parts': [{'text': f'{style}\n\n{text}'}]}],
+        'contents': [{'role': 'user', 'parts': [{'text': f'{style}\n\n{text}'}]}],
         'generationConfig': {'responseModalities': ['AUDIO'], 'speechConfig': speech},
     }
 
@@ -90,14 +92,14 @@ def speak(model, voice, text, style=STYLE, lang=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--model', nargs='+', help='TTS model(s); default: the best one available')
+    ap.add_argument('--model', nargs='+', help=f'TTS model(s); default: {DEFAULT_MODEL}')
     ap.add_argument('--voice', nargs='+', default=list(VOICES), help='voice name(s)')
     ap.add_argument('--lang', help='speechConfig.languageCode, e.g. en-IN')
     ap.add_argument('--style', choices=STYLES, default='teacher')
     ap.add_argument('--out', default=ROOT / 'voice-samples', type=Path)
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    models = args.model or [tts_model()]
+    models = args.model or [DEFAULT_MODEL]
     for model in models:
         print(f'Model: {model}')
         for voice in args.voice:

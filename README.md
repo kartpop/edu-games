@@ -24,4 +24,4 @@ The phone or tablet must be on the same Wi-Fi as the Mac.
 
 ## Voice
 
-Games speak with recorded clips in a single Indian English voice (Gemini TTS, voice Leda), stored in each game's `voice/` folder. Lines without a clip use the device's own voice. `tools/voice_clips.py` records any missing clips. It needs `GEMINI_API_KEY` in a `.env` file, which is gitignored. `.claude/skills/game-voice/SKILL.md` has the exact settings and the reasons behind them.
+Games speak with recorded clips in a single Indian English voice (Gemini TTS, voice Leda), stored in the `voice/` folder at the root, which every game shares. Lines without a clip use the device's own voice. `tools/voice_clips.py` records any missing clips through Google Cloud's Gemini Enterprise Agent Platform. It needs `GOOGLE_CLOUD_API_KEY` in a `.env` file, which is gitignored. `.claude/skills/game-voice/SKILL.md` has the exact settings and the reasons behind them.

@@ -6,7 +6,8 @@ usage: python3 tools/voice_clips.py [game_dir] [--limit N] [--redo TEXT ...]
 Opens the game with #lines in headless Chrome to get every piece of speech (the
 game's own allLines(), so the list can't drift from the game). Each piece without
 a clip is recorded, trimmed of silence, converted to .m4a with afconvert, and
-listed in <game_dir>/voice/clips.json as {text: file}.
+listed in voice/clips.json as {text: file}. voice/ sits at the root of the repo and
+is shared by every game, so a piece like "Yes!" or "42" is recorded only once.
 
 The voice model sometimes reads its director's notes aloud or says a line twice,
 so every clip is transcribed by a text model and recorded again until the words
@@ -25,6 +26,7 @@ from tts_samples import ROOT, STRONG, audio, call, request
 MODEL, VOICE, LANG = 'gemini-3.8-flash-tts', 'Leda', 'en-IN'
 CHECKER = 'gemini-3.8-flash'
 TRIES = 5
+VOICE_DIR = ROOT / 'voice'
 CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 
@@ -45,7 +47,10 @@ def file_name(key, taken):
     return name + '.m4a'
 
 
-STATIC = 0.14  # every take ends with 130 ms of loud static, after a short silence
+# Every take ends with a burst of loud static (~3 kHz), after about 0.4 s of silence: 130 ms through
+# AI Studio, 160 ms through Agent Platform. Cutting a little more than that only takes off silence.
+# (Looking for "a loud burst after a long pause" instead cut real words, like the "2" of "82".)
+STATIC = 0.2
 
 
 def trim(pcm, rate, threshold=600, pad=0.05, static=STATIC):
@@ -76,7 +81,7 @@ def words(text):
 
 
 def heard(pcm, rate):
-    res = call(f'models/{CHECKER}:generateContent', {'contents': [{'parts': [
+    res = call(f'models/{CHECKER}:generateContent', {'contents': [{'role': 'user', 'parts': [
         {'inlineData': {'mimeType': 'audio/wav', 'data': base64.b64encode(wav(pcm, rate)).decode()}},
         {'text': 'Transcribe this audio word for word. Write numbers as digits. Output only the transcript.'}]}]})
     return res['candidates'][0]['content']['parts'][0]['text'].strip()
@@ -112,7 +117,7 @@ def main():
     ap.add_argument('--workers', type=int, default=10)
     args = ap.parse_args()
 
-    out = args.game / 'voice'
+    out = VOICE_DIR
     out.mkdir(exist_ok=True)
     index_path = out / 'clips.json'
     index = json.loads(index_path.read_text()) if index_path.exists() else {}
@@ -120,8 +125,8 @@ def main():
     for k in args.redo:
         index.pop(k, None)
     todo = [k for k in lines if k not in index or not (out / index[k]).exists()][:args.limit]
-    stale = set(index) - set(lines)
-    print(f'{len(lines)} pieces, recording {len(todo)}' + (f', {len(stale)} no longer used' if stale else ''), flush=True)
+    # no "no longer used" count: other games share the folder, so a clip this game dropped may still be needed
+    print(f'{len(lines)} pieces, recording {len(todo)}', flush=True)
 
     taken, failed, done = set(index.values()), [], 0
     with ThreadPoolExecutor(args.workers) as ex:

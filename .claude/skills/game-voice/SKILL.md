@@ -34,8 +34,10 @@ model reads the notes aloud.
 2. **`allLines()`** returns every piece the game can say, and the page shows that list as JSON in
    `<pre id="lines">` when opened with `#lines`. Generate it from the same templates and
    functions the game speaks with, so the list can't drift from the game.
-3. **Clips** go in `<game>/voice/*.m4a`, with `<game>/voice/clips.json` mapping each piece's text
-   to its file.
+3. **Clips** go in the shared `voice/` folder at the root of the repo, with `voice/clips.json`
+   mapping each piece's text to its file. Every game uses the same folder (a game at
+   `<grade>/<subject>/<game>/` sets `CLIPS = '../../../voice/'`), so a piece like "Yes!" or "42"
+   is recorded once. Never delete a clip because one game stopped using it: another may need it.
 4. **Playback.** Copy the "recorded clips" block from
    `junior-kg/math/numbers-till-100/index.html`: `clipPieces`, `loadClip`, `preload`,
    `playClips`, `stopSpeech`, `speak`, `speakDevice`. It plays through Web Audio, so the first tap
@@ -54,10 +56,14 @@ model reads the notes aloud.
 ```
 
 - Use `/usr/bin/python3`. The python.org Python on this Mac fails with SSL certificate errors.
-- The key is `GEMINI_API_KEY` in the repo's `.env`, which is gitignored. Never print it or read the
-  file; check that it exists with `grep -c`.
-- Billing is on, paid from the user's Google AI Pro monthly Cloud credit. A full game of ~1,800
-  pieces cost about $5. Agree with the user before a run much bigger than that.
+- The tools call Gemini on Google Cloud's **Gemini Enterprise Agent Platform** (formerly Vertex AI):
+  `https://aiplatform.googleapis.com/v1/publishers/google/models/<model>:generateContent`, with
+  `"role": "user"` on each message. The key is `GOOGLE_CLOUD_API_KEY` in the repo's `.env`, which is
+  gitignored (optional `GOOGLE_CLOUD_LOCATION`, default `global`). Never print it or read the file;
+  check that it exists with `grep -c`. Don't use the old AI Studio `GEMINI_API_KEY`, even if it's
+  still in `.env`. `tools/agent_platform_test.py` checks that the key works.
+- Billing goes to the key's Google Cloud project. A full game of ~1,800 pieces cost about $5.
+  Agree with the user before a run much bigger than that.
 
 ## What the tool handles, and why
 
