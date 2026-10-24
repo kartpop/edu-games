@@ -875,17 +875,38 @@ const SAY = ["Let's count! Tap 1. Or tap any number to start from there.", "Now 
              'Tap 1, or any number.', 'Now up to the top!', "That's the very end."];
 
 const ANIMALS = [['🐬', 'dolphin'], ['🐒', 'monkey'], ['🐘', 'elephant'], ['🐢', 'turtle'], ['🐼', 'panda'], ['🦒', 'giraffe'],
-                 ['🐧', 'penguin'], ['🐨', 'koala'], ['🦉', 'owl'], ['🐳', 'whale'], ['🐰', 'bunny'], ['🦆', 'duck']];
+                 ['🐧', 'penguin'], ['🐨', 'koala'], ['🦉', 'owl'], ['🐳', 'whale'], ['🐰', 'bunny'], ['🦆', 'duck'],
+                 ['🦁', 'lion'], ['🐯', 'tiger'], ['🦓', 'zebra'], ['🐻', 'bear'], ['🦊', 'fox'], ['🐸', 'frog'],
+                 ['🐱', 'cat'], ['🐶', 'puppy'], ['🐴', 'horse'], ['🐮', 'cow'], ['🐷', 'pig'], ['🐑', 'sheep'],
+                 ['🐔', 'hen'], ['🦚', 'peacock'], ['🦜', 'parrot'], ['🦋', 'butterfly'], ['🐌', 'snail'], ['🐙', 'octopus'],
+                 ['🦀', 'crab'], ['🐿️', 'squirrel'], ['🐫', 'camel'], ['🦌', 'deer'], ['🦛', 'hippo'], ['🦦', 'otter']];
+const byeLine = name => `All done! See you tomorrow. Bye bye from the ${name}!`;
+
+// every animal once before any comes back, remembered across days; only animals whose goodbye has a
+// recorded clip, so a new one waits until it's recorded instead of switching to the device voice
+function nextAnimal() {
+  const ready = ANIMALS.filter(([, name]) => !useClips() || clipPieces(byeLine(name)).flat().every(k => k in clipIndex));
+  const names = ready.map(([, name]) => name);
+  let deck = store.get('animals', []).filter(n => names.includes(n));
+  if (!deck.length) {
+    const last = store.get('lastAnimal', '');
+    deck = shuffle([...names]);
+    if (deck[0] === last && deck.length > 1) deck.push(deck.shift()); // not the same two days running
+  }
+  const name = deck.shift();
+  store.set('animals', deck); store.set('lastAnimal', name);
+  return ready.find(([, n]) => n === name) || pick(ANIMALS);
+}
 
 async function finish() {
   current = null; locked = true; clearInterval(timerId); clearTimeout(countIdle);
-  const [emoji, name] = pick(ANIMALS);
+  const [emoji, name] = nextAnimal();
   $('#animal').textContent = emoji;
   $('#bye').textContent = `Bye bye from the ${name}`;
   $('#end').hidden = false;
   musicFading = true; setMusicLevel(5);
   setTimeout(() => { if (musicFading) stopMusic(); }, 6000);
-  await speak(`All done! See you tomorrow. Bye bye from the ${name}!`);
+  await speak(byeLine(name));
 }
 
 let sessionStarted = false;
@@ -967,7 +988,7 @@ function allLines() {
   const lines = [...SAY, ...PRAISE, ...PRAISE_AGAIN, 'What comes after 20?'], keepN = N;
   N = 100;
   for (const m of [50, 100]) lines.push(`${m}! That's the very end.`, `${m}! Well done!`);
-  for (const [, name] of ANIMALS) lines.push(`All done! See you tomorrow. Bye bye from the ${name}!`);
+  for (const [, name] of ANIMALS) lines.push(byeLine(name));
   const qs = [];
   for (let x = 1; x <= N; x++) {
     lines.push(String(x), `Alright, let's start counting from ${x}.`, `Find ${x}.`, `Tap ${x}.`, `${x}. Now up to the top!`);
