@@ -670,16 +670,22 @@ function praise(q, tries, p = pick(tries ? PRAISE_AGAIN : PRAISE)) {
   }
 }
 
-let bag = [], retry = [], lastAnswer = 0;
+let bag = [], retry = [], lastAnswer = 0, asked = new Set();
+// the same question twice in a session; 34/43 and 43/34 count as the same
+const qKey = q => [q.type, q.x, Math.min(q.a, q.b), Math.max(q.a, q.b), q.more, q.bigger].join();
 function nextQ() {
   retry.forEach(r => r.due--);
   const i = retry.findIndex(r => r.due <= 0);
-  if (i >= 0) return retry.splice(i, 1)[0].q;
+  if (i >= 0) return retry.splice(i, 1)[0].q; // only missed questions come back
   let q;
-  do {
+  for (let tries = 0; ; tries++) {
     if (!bag.length) bag = shuffle(['after', 'before', 'after', 'before', 'compare', 'compare', 'compare', 'ten', 'ten', 'missing', 'missing', 'make', 'split']);
-    q = makeQ(bag.pop());
-  } while (q.answer === lastAnswer);
+    q = makeQ(bag[bag.length - 1]);
+    if (q.answer === lastAnswer || (asked.has(qKey(q)) && tries < 40)) continue;
+    bag.pop();
+    break;
+  }
+  asked.add(qKey(q));
   return q;
 }
 
@@ -888,7 +894,7 @@ function startSession() {
   musicFading = false; startMusic(); setMusicLevel(1.5);
   if (N !== settings.max) buildGrid();
   sessionStarted = true;
-  bag = []; retry = []; lastAnswer = 0; current = null; locked = true; warmups = [];
+  bag = []; retry = []; asked = new Set(); lastAnswer = 0; current = null; locked = true; warmups = [];
   elapsed = 0; warns = 0; lastWarnAt = -Infinity; finalQ = false; paused = false;
   $('#note').textContent = '';
   lastTick = performance.now(); clearInterval(timerId); timerId = setInterval(tick, 1000); tick();
