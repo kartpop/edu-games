@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record everything a game says as audio clips, with Gemini text-to-speech.
 
-usage: python3 tools/voice_clips.py [game_dir] [--limit N] [--redo TEXT ...]
+usage: python3 tools/voice_clips.py [game_dir] [--limit N] [--only REGEX] [--redo TEXT ...]
 
 Opens the game with #lines in headless Chrome to get every piece of speech (the
 game's own allLines(), so the list can't drift from the game). Each piece without
@@ -114,6 +114,7 @@ def main():
     ap.add_argument('game', nargs='?', default=ROOT / 'junior-kg/math/numbers-till-100', type=Path)
     ap.add_argument('--limit', type=int, help='record at most this many pieces')
     ap.add_argument('--redo', nargs='+', default=[], help='record these pieces again')
+    ap.add_argument('--only', help='record only missing pieces matching this regular expression')
     ap.add_argument('--workers', type=int, default=10)
     args = ap.parse_args()
 
@@ -124,7 +125,8 @@ def main():
     lines = game_lines(args.game)
     for k in args.redo:
         index.pop(k, None)
-    todo = [k for k in lines if k not in index or not (out / index[k]).exists()][:args.limit]
+    todo = [k for k in lines if (k not in index or not (out / index[k]).exists())
+            and (not args.only or re.search(args.only, k))][:args.limit]
     # no "no longer used" count: other games share the folder, so a clip this game dropped may still be needed
     print(f'{len(lines)} pieces, recording {len(todo)}', flush=True)
 
