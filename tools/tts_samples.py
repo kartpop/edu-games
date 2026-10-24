@@ -54,7 +54,9 @@ def call(path, body=None):
                                  headers={'x-goog-api-key': KEY, 'Content-Type': 'application/json'})
     for attempt in range(5):
         try:
-            with urllib.request.urlopen(req, timeout=180) as r:
+            # Agent Platform can take minutes (95th percentile ~280 s); a request we give up on still
+            # finishes and is billed, and the retry pays again
+            with urllib.request.urlopen(req, timeout=300) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
             if e.code in (429, 500, 503) and attempt < 4:

@@ -41,7 +41,7 @@ def call(url, key, body):
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers={'x-goog-api-key': key, 'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=180) as r:
+        with urllib.request.urlopen(req, timeout=300) as r:
             return json.load(r), None
     except urllib.error.HTTPError as e:
         return None, f'{e.code} from {url}\n{e.read().decode()[:800]}'
