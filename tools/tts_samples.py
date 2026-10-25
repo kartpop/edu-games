@@ -78,16 +78,15 @@ def call(path, body=None):
             with urllib.request.urlopen(req, timeout=300) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
+            # refused before any work was done (busy or over quota), so trying again doesn't pay twice
             if e.code in (429, 500, 503) and attempt < 4:
                 wait = 20 * 2 ** attempt * random.uniform(0.75, 1.25)  # back off, and not in step with other threads
                 print(f'  {e.code}, retrying in {wait:.0f}s')
                 time.sleep(wait)
                 continue
             sys.exit(f'{e.code}: {e.read().decode()[:400]}')
-        except (TimeoutError, OSError) as e:  # a slow or dropped connection: try again
-            if attempt == 4:
-                raise
-            print(f'  {e!r}, retrying')
+        # a timeout or dropped connection is not retried: the request may still have been answered and
+        # billed. The caller notes it and moves on (one request per clip; see voice_clips.py)
 
 
 def request(voice, text, style=STYLE, lang=None):
