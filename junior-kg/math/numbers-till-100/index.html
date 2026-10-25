@@ -847,7 +847,7 @@ function show(q) {
   const d = describe(q);
   q.say = d.say;
   $('#prompt').innerHTML = d.html;
-  fitBeads();
+  fitBeads(); requestAnimationFrame(() => fitBeads()); // again once the page has laid out
   const box = $('#choices'); box.innerHTML = ''; cards = {};
   for (const n of q.type === 'compare' ? [q.a, q.b] : q.choices || []) {
     const b = document.createElement('button');
@@ -948,7 +948,10 @@ function fitBeads() {
     if (fits()) break;
   }
 }
-addEventListener('resize', fitBeads);
+// measure again whenever the panel changes size, not just on a window resize: the iPad's browser bars
+// can squeeze the panel for a moment, and the beads stayed tiny after measuring then
+new ResizeObserver(() => fitBeads()).observe($('.panel'));
+document.fonts?.ready.then(() => fitBeads());
 
 function renderBeads(q) {
   beadsT.forEach((b, i) => { b.classList.toggle('on', i < q.tens); b.style.setProperty('--b', `var(--b${i})`); });
