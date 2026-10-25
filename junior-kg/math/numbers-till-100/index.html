@@ -167,11 +167,28 @@
   #turtle {
     --p: 0;
     position: absolute; top: 55%; left: calc(6px + var(--p) * (100% - 46px));
-    transform: translateY(-55%) scaleX(-1); font-size: 26px; transition: left 1s linear;
+    width: 40px; transform: translateY(-62%); transition: left 1s linear;
   }
+  #turtle svg { display: block; width: 40px; height: auto; overflow: visible; }
   #note { position: absolute; right: 12px; top: -4px; font-size: 15px; font-weight: 700; color: var(--soft); }
-  /* the turtle naps when the questions fall behind (lenient time) */
-  #zzz { position: absolute; left: -6px; bottom: 80%; white-space: nowrap; font-size: 13px; color: var(--soft); opacity: 0; transition: opacity 1.5s; transform: scaleX(-1); }
+  /* the turtle naps when the questions fall behind (lenient time): legs in, shell down, head down, eyes shut */
+  #turtle .legs, #turtle .head, #turtle .shell { transition: opacity 1.2s, transform 1.2s; }
+  #turtle .napping { opacity: 0; transition: opacity 1.2s; }
+  #turtle.asleep .legs { opacity: 0; transform: translateY(-3px); }
+  #turtle.asleep .shell { transform: translateY(3px); }
+  #turtle.asleep .head { opacity: 0; }
+  #turtle.asleep .napping { opacity: 1; }
+  #turtle .shell { transform-box: fill-box; transform-origin: bottom; }
+  #turtle.asleep .shell { animation: snooze 4s ease-in-out 1.2s infinite; }
+  @keyframes snooze { 50% { transform: translateY(3px) scaleY(.96); } }
+  /* beside the head, on the track: above the turtle is the board. Near the end it moves to the tail side */
+  #zzz {
+    position: absolute; left: 100%; top: 0; margin-left: 2px; white-space: nowrap;
+    font-size: 9px; font-weight: 700; color: var(--soft); opacity: 0; transition: opacity 1.5s;
+  }
+  /* small by the head, bigger as they float off */
+  #zzz span { display: inline-block; font-size: 11px; transform: translateY(-3px); } #zzz span + span { font-size: 13px; transform: translateY(-7px); }
+  #turtle.late #zzz { left: auto; right: 100%; margin: 0 2px 0 0; direction: rtl; } /* still small by the turtle */
   #turtle.asleep #zzz { opacity: 1; }
 
   /* ---------- full screens ---------- */
@@ -266,7 +283,31 @@
   </div>
   <div class="time">
     <div class="track"></div>
-    <div id="turtle">🐢<span id="zzz">z z z</span></div>
+    <div id="turtle">
+      <svg viewBox="0 0 44 26" aria-hidden="true">
+        <g class="legs" fill="#B7CF97">
+          <path d="M3 19 L7 17.5 L7 20.5 Z"/>
+          <rect x="9" y="17" width="5.5" height="7" rx="2.5"/><rect x="25" y="17" width="5.5" height="7" rx="2.5"/>
+        </g>
+        <g class="head">
+          <path d="M31 14 Q34 12 37 12 L37 18 Q34 18 31 18 Z" fill="#B7CF97"/>
+          <circle cx="38" cy="13.5" r="4.6" fill="#B7CF97"/>
+          <circle cx="39.4" cy="12.6" r="0.95" fill="#3E4A59"/>
+          <path d="M38.6 15.6 Q40 16.4 41.4 15.4" fill="none" stroke="#3E4A59" stroke-width=".7" stroke-linecap="round"/>
+        </g>
+        <g class="napping">
+          <path d="M31 18.5 Q34 18 36.5 18.5 L36.5 23 Q34 23.4 31 23 Z" fill="#B7CF97"/>
+          <ellipse cx="38.5" cy="20.6" rx="4.4" ry="3.6" fill="#B7CF97"/>
+          <path d="M38.4 20 Q39.6 21 40.8 20" fill="none" stroke="#3E4A59" stroke-width=".8" stroke-linecap="round"/>
+        </g>
+        <g class="shell">
+          <path d="M5 19 Q6 4 20 4 Q34 4 35 19 Z" fill="#9CBF7E"/>
+          <path d="M15 9 L25 9 L28 14 L25 19 L15 19 L12 14 Z M20 4.2 L20 9 M12 14 L6.5 14 M28 14 L33.5 14" fill="none" stroke="#7FA463" stroke-width="1.1" stroke-linejoin="round"/>
+          <rect x="4" y="18" width="32" height="3.2" rx="1.6" fill="#87AA69"/>
+        </g>
+      </svg>
+      <span id="zzz">z<span>z</span><span>z</span></span>
+    </div>
     <div id="note"></div>
   </div>
 </div>
@@ -1064,6 +1105,7 @@ function tick() {
 function drawTurtle() {
   $('#turtle').style.setProperty('--p', turtle);
   $('#turtle').classList.toggle('asleep', lenient() && $('#end').hidden && (turtleState === 'nap' || turtle >= .95));
+  $('#turtle').classList.toggle('late', turtle > .85); // no room for the z's past the head, by "Last one"
 }
 
 async function next() {
