@@ -102,8 +102,17 @@ fine clips. `voice_clips.py` works this way; keep it that way.
 - **A short piece can set the model talking** ("make 14" came back as "Once we finish the circle…"
   four times). Two fixes in `voice_clips.py`, for the user to choose from: `SPOKEN` sends it in other
   words ("make fourteen"), and `CARRIED` reads it between "Hello." and "Goodbye.", then keeps the
-  middle part, cut at the pauses. That got "make 14" right first time. A lone "0" is always sent as
+  middle part, cut at the pauses. That got "make 14" right first time. Rewording can change more than the words: "Just two more
+  minutes to go." (sent for "Just 2 more minutes to go!" to sound softer) came back with an American
+  accent, so the user always listens to reworded takes. A lone "0" is always sent as
   "zero", because given "0 ones." the model says just "ones".
+- **Stitching many pieces sounds choppy.** Each piece is recorded as a finished sentence, so the voice
+  drops at the end of every piece. "7 tens | and 1 one | make 71" sounded off, while the whole sentence
+  recorded as one clip sounds natural. Keep `|` cuts for one or two joins. Changing the gaps doesn't fix it.
+- **Long sentences often come back said twice or with chatter after them** (51 of 90 for "N tens and
+  M ones make X"). When the transcript starts with exactly the right sentence, cut the take at the
+  long pause after it, on the Mac (choose the longest pause that falls where a good take of that line
+  ends, judged from the takes that passed). Then the user listens; don't spend a request re-checking it.
 - **The transcriber sometimes mishears the accent** ("Tap" as "Tab" or "Tape"). If one piece keeps
   failing, it may be fine; the user can listen and decide.
 

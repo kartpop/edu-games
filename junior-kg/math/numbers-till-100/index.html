@@ -132,7 +132,10 @@
   }
 
   /* ---------- bead frame: a T rod and an O rod on a base, beads stack up from the bottom ---------- */
-  #beads { --bh: clamp(16px, 3.3vh, 28px); --rw: clamp(76px, 8vw, 104px); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .panel > * { flex-shrink: 0; } /* so text can't overflow a squeezed box: fitBeads() makes room instead */
+  .panel:has(#beads:not([hidden])) { gap: 14px; }
+  .panel:has(#beads:not([hidden])) .prompt { font-size: clamp(24px, 2.8vw, 40px); line-height: 1.3; }
+  #beads { --bh: 28px; /* fitBeads() makes the beads smaller when the panel is short */ --rw: clamp(76px, 8vw, 104px); display: flex; flex-direction: column; align-items: center; gap: 8px; }
   #beads[hidden] { display: none; }
   .frame { display: flex; gap: 20px; align-items: flex-end; padding: 0 10px; border-bottom: 5px solid var(--line); border-radius: 0 0 6px 6px; }
   .rod { position: relative; width: var(--rw); height: calc(10 * (var(--bh) + 4px) + 10px); border: 0; padding: 0; background: none; cursor: pointer; }
@@ -460,8 +463,15 @@ function preload(...texts) {
   if (!useClips()) return;
   for (const t of texts) for (const k of clipPieces(t).flat()) if (k in clipIndex) loadClip(k).catch(() => {});
 }
+// pauses, in seconds: between pieces of a sentence, between sentences, and before a new line when
+// the last one finished just now (an interrupted line, like a tap mid-count, gets no pause)
+const GAP = { piece: 0.05, sentence: 0.45, line: 0.6 };
+const PAUSE_AFTER = { "Let's make": 0.3 }; // "Let's make … 34", not "Let's make34"
+let lineEnd = 0; // when the last line that played to the end finished, on the audio clock
+
 function stopClips() {
   if (!clipPlay) return;
+  lineEnd = 0;
   clipPlay.sources.forEach(s => { try { s.stop(); } catch {} });
   clearTimeout(clipPlay.timer); clipPlay.done();
   clipPlay = null; speaking = false; setMusicLevel();
@@ -478,16 +488,17 @@ async function playClips(text, id) {
   window.speechSynthesis?.cancel();
   speaking = true; setMusicLevel(0.2);
   const sources = [];
-  let t = ac.currentTime + 0.05, i = 0;
+  let t = Math.max(ac.currentTime + 0.05, lineEnd + GAP.line), i = 0, end = t;
   sentences.forEach(s => s.forEach((k, j) => {
     const src = ac.createBufferSource();
     src.buffer = bufs[i++]; src.connect(master); src.start(t); sources.push(src);
-    t += src.buffer.duration + (j < s.length - 1 ? 0.05 : 0.35); // short gap inside a sentence, longer after it
+    end = t + src.buffer.duration;
+    t = end + (PAUSE_AFTER[k] ?? (j < s.length - 1 ? GAP.piece : GAP.sentence));
   }));
   await new Promise(done => {
-    clipPlay = { sources, done, timer: setTimeout(done, (t - 0.35 - ac.currentTime) * 1000) };
+    clipPlay = { sources, done, timer: setTimeout(done, (end - ac.currentTime) * 1000) };
   });
-  if (id === speechId) { clipPlay = null; speaking = false; setMusicLevel(); }
+  if (id === speechId) { clipPlay = null; speaking = false; setMusicLevel(); lineEnd = end; }
   return true;
 }
 
@@ -610,7 +621,7 @@ const tensW = t => t === 1 ? '1 ten' : `${t} tens`;
 const onesW = o => o === 1 ? '1 one' : `${o} ones`;
 const tensOnes = x => [Math.floor(x / 10), x % 10];
 // tens and ones on the bead frame, for a number with at least one ten and no hundreds:
-// "show": "Show 32", the child puts on the beads; "build": "3 tens and 2 ones", the child puts them on, then finds the number
+// "show": "Make 32", the child puts on the beads; "build": "3 tens and 2 ones", the child puts them on, then finds the number
 function beadQ(ask, x = rnd(10, Math.min(N, 99))) {
   const [t, o] = tensOnes(x);
   return { type: 'beads', ask, x, t, o, answer: x };
@@ -660,7 +671,7 @@ function describe(q) {
     }
     case 'missing': return { html: 'Which number is hiding?', say: 'Which number is hiding?' };
     case 'beads': return q.ask === 'show'
-      ? { html: `Show ${num(q.x)}`, say: `Show | ${q.x}. First the tens.` }
+      ? { html: `Make ${num(q.x)}`, say: `Let's make | ${q.x}. First the tens.` }
       : { html: `<b>${q.t}</b> ${q.t === 1 ? 'ten' : 'tens'} and <b>${q.o}</b> ${q.o === 1 ? 'one' : 'ones'}`,
           say: `Let's make | ${tensW(q.t)} | and ${onesW(q.o)}. First the tens.` };
   }
@@ -704,7 +715,7 @@ function praise(q, tries, p = pick(tries ? PRAISE_AGAIN : PRAISE)) {
     case 'ten': return `${p} 10 ${q.more ? 'more' : 'less'} than ${x} is ${answer}.`;
     case 'compare': return `${p} ${answer} is ${q.bigger ? 'bigger' : 'smaller'}.`;
     case 'missing': return `${p} It's ${x}.`;
-    case 'beads': return `${p} ${tensW(q.t)} | and ${onesW(q.o)} | make ${x}.`;
+    case 'beads': return `${p} ${tensW(q.t)} and ${onesW(q.o)} make ${x}.`; // one clip per number: in pieces it sounded choppy
   }
 }
 
@@ -811,6 +822,7 @@ function show(q) {
   const d = describe(q);
   q.say = d.say;
   $('#prompt').innerHTML = d.html;
+  fitBeads();
   const box = $('#choices'); box.innerHTML = ''; cards = {};
   for (const n of q.type === 'compare' ? [q.a, q.b] : q.choices || []) {
     const b = document.createElement('button');
@@ -896,6 +908,22 @@ for (const [rod, list] of [[$('#rodT'), beadsT], [$('#rodO'), beadsO]]) {
   }
 }
 
+// make the beads smaller until everything in the panel fits its height (an iPad in landscape is short)
+function fitBeads() {
+  const panel = $('.panel'), box = $('#beads');
+  if (box.hidden) return;
+  const fits = () => {
+    const p = panel.getBoundingClientRect();
+    const r = [...panel.children].filter(k => k.offsetParent).map(k => k.getBoundingClientRect());
+    return Math.min(...r.map(k => k.top)) >= p.top - 1 && Math.max(...r.map(k => k.bottom)) <= p.bottom + 1;
+  };
+  for (let bh = 28; bh >= 10; bh -= 2) {
+    box.style.setProperty('--bh', `${bh}px`);
+    if (fits()) break;
+  }
+}
+addEventListener('resize', fitBeads);
+
 function renderBeads(q) {
   beadsT.forEach((b, i) => { b.classList.toggle('on', i < q.tens); b.style.setProperty('--b', `var(--b${i})`); });
   beadsO.forEach((b, i) => { b.classList.toggle('on', i < q.ones); b.style.setProperty('--b', `var(--b${q.tens})`); });
@@ -951,7 +979,7 @@ async function onesDone(q, said) {
   await said; await wait(300);
   if (q.ask === 'build') { // now find the number they make
     q.phase = 'find'; renderBeads(q);
-    q.say = 'Which number did we make?'; $('#prompt').innerHTML = q.say;
+    q.say = 'Which number did we make? Tap it.'; $('#prompt').innerHTML = 'Which number did we make?<br>Tap it.'; fitBeads();
     locked = false;
     return speak(q.say);
   }
@@ -975,7 +1003,7 @@ function beadMiss(q, key, short) {
 
 // everything a bead question can say, for preload and allLines
 function beadLines(q) {
-  const lines = [describe(q).say, explain(q), praise(q, 0, ''), 'Which number did we make?',
+  const lines = [describe(q).say, explain(q), praise(q, 0, ''), 'Which number did we make? Tap it.',
                  `${tensW(q.t)}. That's ${q.t * 10}. Now the ones.`, `${tensW(q.t)}. That's ${q.x}. And 0 ones.`];
   for (const key of ['tens', 'ones']) for (const short of [1, 2, -1]) lines.push(beadMiss(q, key, short));
   return lines;
