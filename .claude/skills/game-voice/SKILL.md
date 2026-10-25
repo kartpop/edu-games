@@ -52,7 +52,9 @@ model reads the notes aloud.
 **The user's rule (2026-10-25): N clips cost N recording requests, then N checking requests.**
 Record each piece once. Then transcribe each clip once. When a transcript doesn't match, don't
 record again: the clip goes to `voice/review.json`, and at the end you list those for the user
-to hear. The user decides: `--approve` for the good ones, `--redo` for the bad ones. Never re-record
+to hear, in the session, with an `afplay` command, and wait. The user decides: `--approve` for the
+good ones, `--redo` for the bad ones, then you show the new takes, until the user is happy. Don't
+commit or push while clips are still waiting for review (see CLAUDE.md). Never re-record
 or re-check automatically, and never run checking passes of your own over clips that already
 exist. The transcriber mishears the accent often ("make 14" as "MiG-14"), so most doubts are
 fine clips. `voice_clips.py` works this way; keep it that way.
@@ -97,6 +99,11 @@ fine clips. `voice_clips.py` works this way; keep it that way.
   zero-crossing rate in 5 ms windows over the last second.
 - **Format:** AAC `.m4a` at 32 kbps, 24 kHz mono, made with `afconvert`, since there's no ffmpeg on
   this Mac. That's about 15 KB a clip, and pages fetch clips only when they're needed.
+- **A short piece can set the model talking** ("make 14" came back as "Once we finish the circle…"
+  four times). Two fixes in `voice_clips.py`, for the user to choose from: `SPOKEN` sends it in other
+  words ("make fourteen"), and `CARRIED` reads it between "Hello." and "Goodbye.", then keeps the
+  middle part, cut at the pauses. That got "make 14" right first time. A lone "0" is always sent as
+  "zero", because given "0 ones." the model says just "ones".
 - **The transcriber sometimes mishears the accent** ("Tap" as "Tab" or "Tape"). If one piece keeps
   failing, it may be fine; the user can listen and decide.
 

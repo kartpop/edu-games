@@ -27,7 +27,10 @@
     --d8: #E1E6F5;
     --d9: #DCF0EE;
     --coral: #E3A08C;
-    --ring: #D27C63;  /* rings around tiles and cards: darker than --coral so they're easy to spot */
+    --ring: #D27C63;
+    /* a deeper tint per group of ten, for its bead and its column's outline */
+    --b0: #9CCFB3; --b1: #EBB28C; --b2: #B9A9DC; --b3: #E2C978; --b4: #9DC3DF;
+    --b5: #E0A0B1; --b6: #AFC991; --b7: #D6B48E; --b8: #A2AFE0; --b9: #93CEC7;  /* rings around tiles and cards: darker than --coral so they're easy to spot */
     --good: #D3EBDA;
     --goodline: #94C7A3;
   }
@@ -112,7 +115,14 @@
   }
   .tile.qmark { color: var(--coral); font-weight: 800; }
   .tile.ref, .card.ref { box-shadow: inset 0 0 0 4px var(--ring); }
-  .tile.full { box-shadow: inset 0 0 0 3px #A9C8DB; }  /* the full columns, when explaining tens */
+  .tile { position: relative; z-index: 1; }
+  /* a tens bead lights up its whole column; a ones bead lights up one square after them */
+  .colring {
+    grid-row: 1 / span 10; margin: -5px; border-radius: 16px; pointer-events: none; z-index: 0;
+    transition: box-shadow .5s, background .5s;
+  }
+  .colring.on { box-shadow: inset 0 0 0 4px var(--b); background: color-mix(in srgb, var(--b) 30%, transparent); }
+  .tile.one { box-shadow: inset 0 0 0 4px var(--b); background: color-mix(in srgb, var(--b) 45%, var(--t)); }
   .tile.dim, .card.dim { opacity: .4; }
   .tile.glow, .card.glow { animation: breathe 2.4s ease-in-out infinite; }
   .tile.good, .card.good { background: var(--good); box-shadow: inset 0 0 0 3px var(--goodline); animation: none; }
@@ -120,6 +130,28 @@
     0%, 100% { box-shadow: inset 0 0 0 3px rgba(210,124,99,.35); }
     50% { box-shadow: inset 0 0 0 5px rgba(210,124,99,1); }
   }
+
+  /* ---------- bead frame: a T rod and an O rod on a base, beads stack up from the bottom ---------- */
+  #beads { --bh: clamp(16px, 3.3vh, 28px); --rw: clamp(76px, 8vw, 104px); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  #beads[hidden] { display: none; }
+  .frame { display: flex; gap: 20px; align-items: flex-end; padding: 0 10px; border-bottom: 5px solid var(--line); border-radius: 0 0 6px 6px; }
+  .rod { position: relative; width: var(--rw); height: calc(10 * (var(--bh) + 4px) + 10px); border: 0; padding: 0; background: none; cursor: pointer; }
+  .rod::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 5px; margin-left: -2.5px; background: var(--line); border-radius: 3px; }
+  .rod:disabled { cursor: default; }
+  .rod::before, .bead { transition: opacity .5s, background .45s, border-color .45s; }
+  .rod:disabled::before, .rod:disabled .bead:not(.on) { opacity: .3; }
+  .bead { position: absolute; left: 6px; right: 6px; height: var(--bh); border-radius: 50%; border: 2px dashed #E2DACB; }
+  .bead.on { border: 2px solid rgba(62,74,89,.2); background: var(--b); box-shadow: inset 0 -4px 0 rgba(0,0,0,.06); }
+  .rodnames, .digits { display: flex; gap: 20px; padding: 0 10px; }
+  .rodnames div, .digits div { width: var(--rw); text-align: center; }
+  .rodnames b { font-size: 28px; font-weight: 800; line-height: 1; }
+  .digits div {
+    height: clamp(44px, 7vh, 60px); border-radius: 14px; background: var(--card); box-shadow: inset 0 0 0 2px #EDE6D8;
+    display: flex; align-items: center; justify-content: center; font-size: clamp(30px, 5vh, 42px); font-weight: 800; transition: background .5s;
+  }
+  .digits div.set { background: var(--good); box-shadow: inset 0 0 0 2px var(--goodline); }
+  #beadDone { border: 0; border-radius: 30px; padding: 10px 26px; font-size: 20px; font-weight: 800; background: var(--d4); cursor: pointer; }
+  #beadDone[hidden] { display: none; }
 
   #arrows { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
   .bridge { fill: none; stroke: var(--line); stroke-width: 2; stroke-linecap: round; }
@@ -190,6 +222,15 @@
     <div class="panel">
       <div class="prompt" id="prompt"></div>
       <div class="choices" id="choices"></div>
+      <div id="beads" hidden>
+        <div class="frame">
+          <button class="rod" id="rodT" aria-label="Tens beads"></button>
+          <button class="rod" id="rodO" aria-label="Ones beads"></button>
+        </div>
+        <div class="rodnames"><div><b>T</b></div><div><b>O</b></div></div>
+        <div class="digits"><div id="digT"></div><div id="digO"></div></div>
+        <button id="beadDone" hidden>Done ✓</button>
+      </div>
       <button class="say" id="say" aria-label="Say it again">🔊</button>
       <button class="skip" id="skip" hidden>Skip counting ⏭</button>
     </div>
@@ -245,6 +286,11 @@
     <div class="row"><span>Play time</span>
       <div class="slide"><input type="range" id="mins" min="5" max="20" step="1"><output id="minsOut"></output></div>
     </div>
+    <div class="row"><span>Tens beads</span>
+      <div class="seg" id="beadHelp">
+        <button data-h="guided" title="The tens rod stops at the right count, then the ones rod opens">Stop at the count</button><button data-h="done" title="The child decides how many, then taps Done">Child taps Done</button>
+      </div>
+    </div>
     <label class="row"><span>Hide some numbers</span><input type="checkbox" id="fadeOn"></label>
     <label class="row"><span>Music</span><input type="checkbox" id="musicOn"></label>
     <label class="row"><span>Voice</span><input type="checkbox" id="voiceOn"></label>
@@ -275,9 +321,11 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('numbers.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('numbers.' + k, JSON.stringify(v)); } catch {} },
 };
-const settings = Object.assign({ max: 100, minutes: 7, fade: false, music: true, voice: true, voiceName: '' }, store.get('settings', {}));
+const settings = Object.assign({ max: 100, minutes: 9, beadHelp: 'guided', fade: false, music: true, voice: true, voiceName: '' }, store.get('settings', {}));
 // play time used to be 3/5/7 buttons defaulting to 5; move older saved settings onto the new 7 min default
-if (!settings.slider) { settings.minutes = 7; settings.slider = true; }
+if (!settings.slider) { settings.minutes = 9; settings.slider = true; }
+// the default went from 7 to 9 minutes; move devices still on the old default
+if (!settings.nine) { if (settings.minutes === 7) settings.minutes = 9; settings.nine = true; }
 settings.minutes = Math.min(20, Math.max(5, settings.minutes));
 const saveSettings = () => store.set('settings', settings);
 let N = settings.max; // highest number on the board, fixed for a session
@@ -471,15 +519,21 @@ function speakDevice(text) {
 
 /* ---------------- grid ---------------- */
 const grid = $('#grid');
-let tiles = [], blanks = new Set();
+let tiles = [], rings = [], blanks = new Set();
 
 function buildGrid() {
   N = settings.max;
-  tiles.forEach(t => t && t.remove());
-  tiles = [];
+  tiles.forEach(t => t && t.remove()); rings.forEach(r => r.remove());
+  tiles = []; rings = [];
+  for (let c = 0; c < N / 10; c++) {
+    const r = document.createElement('div');
+    r.className = 'colring'; r.style.gridColumn = c + 1; r.style.setProperty('--b', `var(--b${c})`);
+    grid.insertBefore(r, $('#arrows')); rings.push(r);
+  }
   for (let n = 1; n <= N; n++) {
     const b = document.createElement('button');
     b.className = 'tile'; b.style.setProperty('--t', tint(n)); b.textContent = n;
+    b.style.gridColumn = col(n) + 1; b.style.gridRow = (n - 1) % 10 + 1;
     b.addEventListener('click', () => onTile(n));
     grid.insertBefore(b, $('#arrows'));
     tiles[n] = b;
@@ -491,6 +545,7 @@ function buildGrid() {
 }
 function renderTiles() {
   for (let n = 1; n <= N; n++) { tiles[n].className = 'tile'; tiles[n].textContent = blanks.has(n) ? '' : n; }
+  rings.forEach(r => r.classList.remove('on'));
 }
 function reveal(n) { blanks.delete(n); tiles[n].textContent = n; tiles[n].classList.remove('qmark'); }
 function randomBlanks(protect) {
@@ -554,15 +609,11 @@ const swappedPairs = () => {
 const tensW = t => t === 1 ? '1 ten' : `${t} tens`;
 const onesW = o => o === 1 ? '1 one' : `${o} ones`;
 const tensOnes = x => [Math.floor(x / 10), x % 10];
-// a number with at least one ten, and no hundreds
-const placeX = () => rnd(10, Math.min(N, 99));
-// "42: how many tens?" then "and how many ones?"; the cards include the other digit,
-// and the tens cards include t + 1, since 42 sits in the 5th column
-function splitQ(x, part = 'tens') {
-  const [t, o] = tensOnes(x), answer = part === 'tens' ? t : o;
-  const pool = part === 'tens' ? [o, t + 1, t - 1, t + 2].filter(n => n >= 1 && n <= N / 10)
-                               : [t, o + 1, o - 1, o + 2, o - 2].filter(n => n >= 0 && n <= 9);
-  return { type: 'split', part, x, answer, choices: [answer, ...new Set(pool.filter(n => n !== answer))].slice(0, 3) };
+// tens and ones on the bead frame, for a number with at least one ten and no hundreds:
+// "show": "Show 32", the child puts on the beads; "build": "3 tens and 2 ones", the child puts them on, then finds the number
+function beadQ(ask, x = rnd(10, Math.min(N, 99))) {
+  const [t, o] = tensOnes(x);
+  return { type: 'beads', ask, x, t, o, answer: x };
 }
 
 function makeQ(type) {
@@ -590,8 +641,7 @@ function makeQ(type) {
       const pool = shuffle([x + 10, x - 10, swap, x + 2, x - 2].filter(n => n >= 1 && n <= N && n !== x));
       return { type, x, answer: x, choices: [x, ...new Set(pool)].slice(0, 3) };
     }
-    case 'make': { const x = placeX(); return { type, x, answer: x }; }
-    case 'split': return splitQ(placeX());
+    case 'show': case 'build': return beadQ(type);
   }
 }
 
@@ -609,14 +659,10 @@ function describe(q) {
       return { html: `Which is <b>${w}</b>?`, say: `Which is ${w}, | ${q.a} | or ${q.b}?` };
     }
     case 'missing': return { html: 'Which number is hiding?', say: 'Which number is hiding?' };
-    case 'make': {
-      const [t, o] = tensOnes(q.x);
-      return { html: `What number is<br><b>${t}</b> ${t === 1 ? 'ten' : 'tens'} and <b>${o}</b> ${o === 1 ? 'one' : 'ones'}?`,
-               say: `What number is | ${tensW(t)} | and ${onesW(o)}?` };
-    }
-    case 'split': return q.part === 'tens'
-      ? { html: `${num(q.x)}<br>How many <b>tens</b>?`, say: `${q.x}. How many tens?` }
-      : { html: `${num(q.x)}<br>And how many <b>ones</b>?`, say: 'And how many ones?' };
+    case 'beads': return q.ask === 'show'
+      ? { html: `Show ${num(q.x)}`, say: `Show | ${q.x}. First the tens.` }
+      : { html: `<b>${q.t}</b> ${q.t === 1 ? 'ten' : 'tens'} and <b>${q.o}</b> ${q.o === 1 ? 'one' : 'ones'}`,
+          say: `Let's make | ${tensW(q.t)} | and ${onesW(q.o)}. First the tens.` };
   }
 }
 
@@ -644,12 +690,7 @@ function explain(q) {
       return x % 10 === 1
         ? `${x - 1} is at the bottom, so the next one is at the top. After ${x - 1} comes ${x}.`
         : `After ${x - 1} comes ${x}.`;
-    case 'make': case 'split': {
-      // the full columns are the tens, then count on the ones one by one
-      const [t, o] = tensOnes(x);
-      return o ? `${tensW(t)} is ${t * 10}. Then ${o} more. ${range(t * 10 + 1, x).join('. ')}.`
-               : `${tensW(t)} is ${x}. And 0 ones.`;
-    }
+    case 'beads': return `Look at the last bead. That's ${x}.`; // the wrong number was tapped after building it
   }
 }
 
@@ -663,23 +704,20 @@ function praise(q, tries, p = pick(tries ? PRAISE_AGAIN : PRAISE)) {
     case 'ten': return `${p} 10 ${q.more ? 'more' : 'less'} than ${x} is ${answer}.`;
     case 'compare': return `${p} ${answer} is ${q.bigger ? 'bigger' : 'smaller'}.`;
     case 'missing': return `${p} It's ${x}.`;
-    case 'make': case 'split': {
-      const [t, o] = tensOnes(x);
-      return q.part === 'tens' ? `${p} ${x} | has ${tensW(t)}.` : `${p} ${tensW(t)} | and ${onesW(o)} | make ${x}.`;
-    }
+    case 'beads': return `${p} ${tensW(q.t)} | and ${onesW(q.o)} | make ${x}.`;
   }
 }
 
 let bag = [], retry = [], lastAnswer = 0, asked = new Set();
 // the same question twice in a session; 34/43 and 43/34 count as the same
-const qKey = q => [q.type, q.x, Math.min(q.a, q.b), Math.max(q.a, q.b), q.more, q.bigger].join();
+const qKey = q => [q.type, q.ask, q.x, Math.min(q.a, q.b), Math.max(q.a, q.b), q.more, q.bigger].join();
 function nextQ() {
   retry.forEach(r => r.due--);
   const i = retry.findIndex(r => r.due <= 0);
   if (i >= 0) return retry.splice(i, 1)[0].q; // only missed questions come back
   let q;
   for (let tries = 0; ; tries++) {
-    if (!bag.length) bag = shuffle(['after', 'before', 'after', 'before', 'compare', 'compare', 'compare', 'ten', 'ten', 'missing', 'missing', 'make', 'split']);
+    if (!bag.length) bag = shuffle(['after', 'before', 'after', 'before', 'compare', 'compare', 'compare', 'ten', 'ten', 'missing', 'missing', 'show', 'build']);
     q = makeQ(bag[bag.length - 1]);
     if (q.answer === lastAnswer || (asked.has(qKey(q)) && tries < 40)) continue;
     bag.pop();
@@ -695,7 +733,7 @@ function warmupQs() {
   return cols.map(c => ({ type: 'find', x: c * 10 + rnd(1, 10) })).map(q => ({ ...q, answer: q.x }));
 }
 
-/* ---------------- step 1: counting, from 1 or wherever he chooses ---------------- */
+/* ---------------- step 1: counting, from 1 or wherever the child chooses ---------------- */
 let mode = 'count', countNext = 0, countIdle = null;
 
 function startCounting() {
@@ -710,7 +748,7 @@ function startCounting() {
   armIdle();
 }
 function setCountPrompt() { $('#prompt').innerHTML = `Let's count!<br>Tap ${num(countNext)}`; }
-// if he gets stuck, softly show where the next number is
+// when the child gets stuck, softly show where the next number is
 function armIdle() { clearTimeout(countIdle); countIdle = setTimeout(() => tiles[countNext || 1].classList.add('glow'), 8000); }
 
 function countTap(n) {
@@ -761,12 +799,14 @@ function show(q) {
   const protect = new Set([q.x, q.a, q.b].filter(Boolean));
   if (q.type === 'missing') { protect.add(q.x - 1); protect.add(q.x + 1); }
   if (q.choices) q.choices = shuffle([...q.choices]);
-  blanks = randomBlanks(protect);
+  blanks = q.type === 'beads' ? new Set() : randomBlanks(protect);
   if (q.type === 'missing') blanks.add(q.x);
   renderTiles();
+  $('#beads').hidden = q.type !== 'beads';
+  if (q.type === 'beads') { Object.assign(q, { tens: 0, ones: 0, phase: 'tens' }); renderBeads(q); }
   if (q.type === 'missing') { tiles[q.x].textContent = '?'; tiles[q.x].classList.add('qmark', 'ref'); }
   else if (q.type === 'compare') { tiles[q.a].classList.add('ref'); tiles[q.b].classList.add('ref'); }
-  // no ring on 43 for "what comes after 43?": he took it as the number to tap
+  // no ring on 43 for "what comes after 43?": it was taken as the number to tap
 
   const d = describe(q);
   q.say = d.say;
@@ -781,12 +821,13 @@ function show(q) {
   drawHint();
   locked = false;
   speak(q.say);
-  preload(explain(q), praise(q, 0, ''));
+  preload(explain(q), praise(q, 0, ''), ...(q.type === 'beads' ? beadLines(q) : []));
 }
 
 function onTile(n) {
   if (mode === 'count') return countTap(n);
   if (!current || current.choices) return; // answered with the cards
+  if (current.type === 'beads' && current.phase !== 'find') return; // the beads come first
   if (current.type === 'compare' && n !== current.a && n !== current.b) return;
   answer(n, tiles[n]);
 }
@@ -796,10 +837,6 @@ function showHint(q) {
   glow(cards[q.answer]);
   if (q.type === 'missing') {
     for (const n of [q.x - 1, q.x + 1]) if (n >= 1 && n <= N) { reveal(n); tiles[n].classList.add('ref'); }
-  } else if (q.type === 'make' || q.type === 'split') {
-    const tens = Math.floor(q.x / 10) * 10;
-    for (let n = 1; n <= q.x; n++) { reveal(n); tiles[n].classList.add(n <= tens ? 'full' : 'ref'); }
-    if (q.type === 'make') glow(tiles[q.x]);
   } else glow(tiles[q.answer]);
   if (['after', 'before', 'ten'].includes(q.type)) {
     tiles[q.x].classList.add('ref');
@@ -815,20 +852,20 @@ async function answer(n, el) {
     hint = null; drawHint();
     document.querySelectorAll('.glow').forEach(e => e.classList.remove('glow'));
     el.classList.add('good'); cards[q.answer]?.classList.add('good');
-    if (q.type !== 'split') { tiles[q.answer].classList.add('good'); reveal(q.answer); }
+    tiles[q.answer].classList.add('good'); reveal(q.answer);
+    if (q.type === 'beads') q.phase = 'done';
     chime();
     await speak(praise(q, tries));
     await wait(600);
-    if (q.type === 'split' && q.part === 'tens') return show({ ...splitQ(q.x, 'ones'), retry: q.retry });
     next();
     return;
   }
   tries++;
   el.classList.add('dim'); setTimeout(() => el.classList.remove('dim'), 1600);
   if (el.classList.contains('tile')) reveal(n);
-  if (tries === 1) {
-    // a missed tens/ones question comes back from its first part
-    if (!q.retry && q.type !== 'find') retry.push({ q: { ...(q.type === 'split' ? splitQ(q.x) : q), retry: true }, due: 3 });
+  if (!q.hinted) { // the first wrong answer (a bead miss before it doesn't count)
+    q.hinted = true;
+    if (q.type !== 'find') comeBack(q);
     await speak("Let's look together.");
     showHint(q);
     await speak(explain(q));
@@ -838,9 +875,115 @@ async function answer(n, el) {
   locked = false;
 }
 
+// a missed question comes back 3 questions later, once
+function comeBack(q) {
+  if (q.retry || q.queued) return;
+  q.queued = true;
+  retry.push({ q: q.type === 'beads' ? { ...beadQ(q.ask, q.x), retry: true } : { ...q, retry: true, queued: false, hinted: false }, due: 3 });
+}
+
+/* ---------------- tens and ones on the bead frame ---------------- */
+// Tens first (the ones rod waits), then ones. Each tens bead lights up its column of ten on the board
+// and says 10, 20, 30; each ones bead lights up the next square and counts on, 31, 32. With
+// "Stop at the count" each rod stops at the right number; with "Child taps Done" the child decides, and can
+// tap the top bead to take it off.
+const beadsT = [], beadsO = [];
+for (const [rod, list] of [[$('#rodT'), beadsT], [$('#rodO'), beadsO]]) {
+  for (let i = 0; i < 10; i++) {
+    const b = document.createElement('span');
+    b.className = 'bead'; b.style.bottom = `calc(6px + ${i} * (var(--bh) + 4px))`;
+    rod.appendChild(b); list.push(b);
+  }
+}
+
+function renderBeads(q) {
+  beadsT.forEach((b, i) => { b.classList.toggle('on', i < q.tens); b.style.setProperty('--b', `var(--b${i})`); });
+  beadsO.forEach((b, i) => { b.classList.toggle('on', i < q.ones); b.style.setProperty('--b', `var(--b${q.tens})`); });
+  rings.forEach((r, i) => r.classList.toggle('on', i < q.tens));
+  for (let n = 1; n <= N; n++) {
+    const on = n > q.tens * 10 && n <= q.tens * 10 + q.ones;
+    tiles[n].classList.toggle('one', on);
+    if (on) tiles[n].style.setProperty('--b', `var(--b${q.tens})`);
+  }
+  const counting = q.phase === 'tens' || q.phase === 'ones';
+  $('#rodT').disabled = q.phase !== 'tens';
+  $('#rodO').disabled = q.phase !== 'ones';
+  $('#digT').textContent = q.tens || (q.phase === 'tens' ? '' : 0);
+  $('#digO').textContent = q.phase === 'tens' ? '' : (q.ones || (q.phase === 'ones' ? '' : 0));
+  $('#digT').classList.toggle('set', q.phase !== 'tens');
+  $('#digO').classList.toggle('set', !counting);
+  $('#beadDone').hidden = settings.beadHelp !== 'done' || !counting;
+}
+
+const beadCount = q => String(q.tens * 10 + (q.phase === 'ones' ? q.ones : 0)); // 10, 20, 30, then 31, 32
+
+function beadTap(key, e) {
+  const q = current;
+  if (locked || !q || q.type !== 'beads' || q.phase !== key) return;
+  const list = key === 'tens' ? beadsT : beadsO, top = list[q[key] - 1];
+  if (settings.beadHelp === 'done' && top && e.target === top) { // take the top bead off
+    q[key]--; renderBeads(q);
+    stopSpeech(); if (+beadCount(q)) speak(beadCount(q));
+    return;
+  }
+  if (q[key] >= 9) return;
+  q[key]++; renderBeads(q);
+  stopSpeech();
+  const said = speak(beadCount(q));
+  if (settings.beadHelp === 'guided' && q[key] === (key === 'tens' ? q.t : q.o)) (key === 'tens' ? tensDone : onesDone)(q, said);
+}
+$('#rodT').addEventListener('click', e => beadTap('tens', e));
+$('#rodO').addEventListener('click', e => beadTap('ones', e));
+
+async function tensDone(q, said) {
+  locked = true; q.phase = 'between'; renderBeads(q);
+  await said; await wait(300);
+  if (q.o === 0) { // nothing to put on the ones rod
+    await speak(`${tensW(q.t)}. That's ${q.x}. And 0 ones.`);
+    return onesDone(q);
+  }
+  q.phase = 'ones'; renderBeads(q); locked = false;
+  speak(`${tensW(q.t)}. That's ${q.t * 10}. Now the ones.`);
+}
+
+async function onesDone(q, said) {
+  locked = true; q.phase = 'between'; renderBeads(q);
+  await said; await wait(300);
+  if (q.ask === 'build') { // now find the number they make
+    q.phase = 'find'; renderBeads(q);
+    q.say = 'Which number did we make?'; $('#prompt').innerHTML = q.say;
+    locked = false;
+    return speak(q.say);
+  }
+  q.phase = 'done'; renderBeads(q);
+  locked = false; answer(q.x, tiles[q.x]); // praise, then the next question
+}
+
+// "Child taps Done": check the count, and help when it's off
+$('#beadDone').addEventListener('click', () => {
+  const q = current;
+  if (locked || !q || q.type !== 'beads' || (q.phase !== 'tens' && q.phase !== 'ones')) return;
+  const key = q.phase, need = key === 'tens' ? q.t : q.o, have = q[key];
+  if (have === need) return (key === 'tens' ? tensDone : onesDone)(q);
+  tries++; comeBack(q);
+  stopSpeech(); speak(beadMiss(q, key, have < need ? need - have : -1));
+});
+function beadMiss(q, key, short) {
+  const what = key === 'ones' ? `We need | ${onesW(q.o)}.` : q.ask === 'show' ? `${q.x} | has ${tensW(q.t)}.` : `We need | ${tensW(q.t)}.`;
+  return `${what} ${short === 1 ? 'Add one more.' : short > 1 ? 'Add some more.' : 'Tap the top bead to take one off.'}`;
+}
+
+// everything a bead question can say, for preload and allLines
+function beadLines(q) {
+  const lines = [describe(q).say, explain(q), praise(q, 0, ''), 'Which number did we make?',
+                 `${tensW(q.t)}. That's ${q.t * 10}. Now the ones.`, `${tensW(q.t)}. That's ${q.x}. And 0 ones.`];
+  for (const key of ['tens', 'ones']) for (const short of [1, 2, -1]) lines.push(beadMiss(q, key, short));
+  return lines;
+}
+
 /* ---------------- time: no hard stop, gentle warnings ---------------- */
 let elapsed = 0, lastTick = 0, timerId = null, paused = false;
-let warns = 0, lastWarnAt = -Infinity, finalQ = false;
+let warns = 0, finalQ = false; // warns: reminders given so far, "2 more minutes" then "1 more minute"
 const sessionMs = () => settings.minutes * 60000;
 
 function tick() {
@@ -856,9 +999,12 @@ async function next() {
   if (left <= 15000) {
     finalQ = true; $('#note').textContent = 'Last one';
     await speak('Last one!');
-  } else if (left <= 60000 && warns < 4 && elapsed - lastWarnAt >= 12000) {
-    warns++; lastWarnAt = elapsed; $('#note').textContent = '1 more minute';
-    await speak(warns === 1 ? 'Just one more minute to go!' : 'One more minute!');
+  } else if (left <= 60000 && warns < 2) {
+    warns = 2; $('#note').textContent = '1 more minute';
+    await speak('Just one more minute to go!');
+  } else if (left <= 120000 && warns < 1) {
+    warns = 1; $('#note').textContent = '2 more minutes';
+    await speak('Just 2 more minutes to go!');
   }
   if (warmups.length) return show(warmups.shift());
   if (!quizStarted) {
@@ -871,7 +1017,7 @@ async function next() {
 
 // lines said outside the questions (allLines and preload use this list)
 const SAY = ["Let's count! Tap 1. Or tap any number to start from there.", "Now let's find some numbers.", "Let's look together.",
-             'Tap the glowing one.', 'Last one!', 'Just one more minute to go!', 'One more minute!', 'Now, some questions.',
+             'Tap the glowing one.', 'Last one!', 'Just 2 more minutes to go!', 'Just one more minute to go!', 'Now, some questions.',
              'Tap 1, or any number.', 'Now up to the top!', "That's the very end."];
 
 const ANIMALS = [['🐬', 'dolphin'], ['🐒', 'monkey'], ['🐘', 'elephant'], ['🐢', 'turtle'], ['🐼', 'panda'], ['🦒', 'giraffe'],
@@ -916,7 +1062,7 @@ function startSession() {
   if (N !== settings.max) buildGrid();
   sessionStarted = true;
   bag = []; retry = []; asked = new Set(); lastAnswer = 0; current = null; locked = true; warmups = [];
-  elapsed = 0; warns = 0; lastWarnAt = -Infinity; finalQ = false; paused = false;
+  elapsed = 0; warns = 0; finalQ = false; paused = false;
   $('#note').textContent = '';
   lastTick = performance.now(); clearInterval(timerId); timerId = setInterval(tick, 1000); tick();
   $('#start').hidden = true; $('#end').hidden = true;
@@ -951,6 +1097,7 @@ gear.addEventListener('contextmenu', e => e.preventDefault());
 
 function syncSettingsUI() {
   document.querySelectorAll('#range button').forEach(b => b.classList.toggle('on', +b.dataset.r === settings.max));
+  document.querySelectorAll('#beadHelp button').forEach(b => b.classList.toggle('on', b.dataset.h === settings.beadHelp));
   $('#mins').value = settings.minutes; $('#minsOut').textContent = `${settings.minutes} min`;
   $('#fadeOn').checked = settings.fade;
   $('#musicOn').checked = settings.music;
@@ -971,6 +1118,9 @@ document.querySelectorAll('#range button').forEach(b => b.addEventListener('clic
   settings.max = +b.dataset.r; saveSettings(); syncSettingsUI();
   closeSettings();
   if (sessionStarted && $('#end').hidden) startSession(); else buildGrid();
+}));
+document.querySelectorAll('#beadHelp button').forEach(b => b.addEventListener('click', () => {
+  settings.beadHelp = b.dataset.h; saveSettings(); syncSettingsUI();
 }));
 $('#mins').addEventListener('input', e => { settings.minutes = +e.target.value; saveSettings(); syncSettingsUI(); tick(); });
 $('#fadeOn').addEventListener('change', e => { settings.fade = e.target.checked; saveSettings(); });
@@ -997,7 +1147,7 @@ function allLines() {
     if (x > 1) qs.push({ type: 'before', x, answer: x - 1 });
     if (x % 10 === 0 && x < N) qs.push({ type: 'ten', more: true, x, answer: x + 10 });
     if (x % 10 === 0 && x > 10) qs.push({ type: 'ten', more: false, x, answer: x - 10 });
-    if (x >= 10 && x <= 99) qs.push({ type: 'make', x, answer: x }, splitQ(x), splitQ(x, 'ones'));
+    if (x >= 10 && x <= 99) for (const ask of ['show', 'build']) lines.push(...beadLines(beadQ(ask, x)));
     for (let b = 1; b <= N; b++) if (b !== x) for (const bigger of [true, false]) {
       qs.push({ type: 'compare', a: x, b, bigger, answer: bigger ? Math.max(x, b) : Math.min(x, b) });
     }

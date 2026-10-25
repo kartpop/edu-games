@@ -64,6 +64,13 @@ def trim(pcm, rate, threshold=600, pad=0.05, static=STATIC):
     a, w = array('h', pcm), rate // 100
     a = a[:len(a) - int(static * rate)]
     loud = [i for i in range(0, len(a), w) if sum(abs(v) > threshold for v in a[i:i + w]) > w // 10]
+    # some takes also start with a click: 10-20 ms of noise in the first 50 ms, then quiet, then the speech.
+    # Only the first 50 ms count, so the start of a word ("six", "so") is never taken for a click
+    rms = [(sum(v * v for v in a[i:i + w]) / w) ** .5 for i in range(0, len(a) - w + 1, w)]
+    onset = next((i for i in range(len(rms) - 2) if min(rms[i:i + 3]) > 2000), None)  # loud for 30 ms
+    if onset and onset >= 10 and max(rms[:5]) > 2000 and max(rms[5:onset - 5], default=0) < 2000:
+        a = a[max(0, onset * w - int(pad * rate)):]
+        loud = [i for i in range(0, len(a), w) if sum(abs(v) > threshold for v in a[i:i + w]) > w // 10]
     if not loud:
         return pcm
     p = int(pad * rate)
@@ -82,6 +89,7 @@ NUMBER_WORDS = 'zero one two three four five six seven eight nine ten'.split()
 
 def words(text):
     text = text.lower().replace('-', ' ').replace('all right', 'alright')
+    text = re.sub(r'\b1s\b', 'ones', re.sub(r'\b10s\b', 'tens', text))  # "2 1s" is how it writes "2 ones"
     # the transcript may say "1 more minute" for "One more minute"
     return [str(NUMBER_WORDS.index(w)) if w in NUMBER_WORDS else w for w in re.sub(r'[^a-z0-9 ]', '', text).split()]
 
@@ -93,16 +101,50 @@ def heard(pcm, rate):
     return res['candidates'][0]['content']['parts'][0]['text'].strip()
 
 
+# pieces the model kept talking about instead of reading, sent to it in other words
+SPOKEN = {'make 14': 'make fourteen'}
+# pieces read between two fixed sentences, so a bare phrase isn't taken as a prompt to talk about;
+# the take is cut at its pauses and the middle part kept
+CARRIED = {'make 14'}
+CARRIER = ('Hello.', 'Goodbye.')
+
+
+def middle(pcm, rate, threshold=600, gap=0.2, pad=0.05):
+    """the middle of three parts split by pauses of `gap` seconds or more, or None if it isn't three parts"""
+    a, w = array('h', pcm), rate // 100
+    loud = [sum(abs(v) > threshold for v in a[i:i + w]) > w // 10 for i in range(0, len(a), w)]
+    parts, start, quiet = [], None, 0
+    for i, l in enumerate(loud + [False] * int(gap * 100)):
+        if l:
+            if start is None: start = i
+            quiet = 0
+        elif start is not None:
+            quiet += 1
+            if quiet == int(gap * 100):
+                parts.append((start, i - quiet + 1)); start = None
+    if len(parts) != 3:
+        return None
+    p = int(pad * rate)
+    return a[max(0, parts[1][0] * w - p):parts[1][1] * w + p].tobytes()
+
+
 def record(key):
     """one request: (pcm, rate, None), or (None, None, why not)"""
-    text = key if key[-1] in '.!?,' else key + '.'  # stored without a full stop, but should sound finished
+    text = SPOKEN.get(key, key)
+    text = text if text[-1] in '.!?,' else text + '.'  # stored without a full stop, but should sound finished
+    text = re.sub(r'\b0\b', 'zero', text)  # given "0 ones." the model says just "ones"
+    if key in CARRIED:
+        text = f'{CARRIER[0]} {text} {CARRIER[1]}'
     try:
         pcm, rate = audio(call(f'models/{MODEL}:generateContent', request(VOICE, text, STRONG, LANG)))
     except (KeyError, IndexError):
         return None, None, 'a reply without audio'
     except OSError as e:
         return None, None, f'no reply ({e!r})'
-    return trim(pcm, rate), rate, None
+    pcm = trim(pcm, rate)
+    if key in CARRIED:  # keep the middle part; if the pauses don't give three parts, keep it all for the user to hear
+        pcm = middle(pcm, rate) or pcm
+    return pcm, rate, None
 
 
 def check(key, pcm, rate):
