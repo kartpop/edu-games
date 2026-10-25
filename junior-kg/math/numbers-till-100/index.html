@@ -170,6 +170,9 @@
     transform: translateY(-55%) scaleX(-1); font-size: 26px; transition: left 1s linear;
   }
   #note { position: absolute; right: 12px; top: -4px; font-size: 15px; font-weight: 700; color: var(--soft); }
+  /* the turtle naps when the questions fall behind (lenient time) */
+  #zzz { position: absolute; left: -6px; bottom: 80%; white-space: nowrap; font-size: 13px; color: var(--soft); opacity: 0; transition: opacity 1.5s; transform: scaleX(-1); }
+  #turtle.asleep #zzz { opacity: 1; }
 
   /* ---------- full screens ---------- */
   .overlay {
@@ -194,8 +197,15 @@
   .sheet {
     background: var(--card); border-radius: 24px; padding: 26px 28px; width: min(460px, 100%);
     box-shadow: 0 6px 30px rgba(62,74,89,.12); text-align: left;
+    max-height: 100%; overflow-y: auto;
   }
   .sheet h2 { margin: 0 0 14px; font-size: 22px; }
+  .sheet h3 { margin: 16px 0 0; font-size: 17px; }
+  .sheet .hint-text { margin: 2px 0 4px; font-size: 14px; font-weight: 600; color: var(--soft); }
+  .row.q { padding: 5px 0; font-size: 16px; }
+  .step { display: flex; align-items: center; gap: 4px; }
+  .step button { border: 0; border-radius: 50%; width: 34px; height: 34px; font-size: 20px; font-weight: 800; background: #F1ECE2; cursor: pointer; }
+  .step output { min-width: 40px; text-align: center; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; font-size: 18px; font-weight: 700; }
   .row input { width: 22px; height: 22px; accent-color: #8FB8D0; }
   .row select { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 12px; border: 0; background: #F1ECE2; color: var(--ink); }
@@ -256,7 +266,7 @@
   </div>
   <div class="time">
     <div class="track"></div>
-    <div id="turtle">🐢</div>
+    <div id="turtle">🐢<span id="zzz">z z z</span></div>
     <div id="note"></div>
   </div>
 </div>
@@ -289,6 +299,12 @@
     <div class="row"><span>Play time</span>
       <div class="slide"><input type="range" id="mins" min="5" max="20" step="1"><output id="minsOut"></output></div>
     </div>
+    <div class="row"><span>Time</span>
+      <div class="seg" id="timeMode">
+        <button data-t="strict" title="The game ends when the play time is over">Strict</button><button data-t="lenient" title="The child finishes every question; the turtle naps when the questions fall behind">Lenient</button>
+      </div>
+    </div>
+    <p class="hint-text" id="timeHint"></p>
     <div class="row"><span>Tens beads</span>
       <div class="seg" id="beadHelp">
         <button data-h="guided" title="The tens rod stops at the right count, then the ones rod opens">Stop at the count</button><button data-h="done" title="The child decides how many, then taps Done">Child taps Done</button>
@@ -301,6 +317,9 @@
       <select id="voicePick"></select>
       <button class="btn sm alt" id="testVoice">Test</button>
     </div>
+    <h3>Each game</h3>
+    <p class="hint-text">Changes start with the next game. "1–2" picks one or two at random.</p>
+    <div id="qCounts"></div>
     <div class="row btns">
       <button class="btn sm alt" id="close">Close</button>
       <button class="btn sm" id="restart">Start again</button>
@@ -324,7 +343,10 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('numbers.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('numbers.' + k, JSON.stringify(v)); } catch {} },
 };
-const settings = Object.assign({ max: 100, minutes: 9, beadHelp: 'guided', fade: false, music: true, voice: true, voiceName: '' }, store.get('settings', {}));
+// how many of each question a game has; 1.5 means one or two, picked at random
+const Q_DEFAULTS = { compare: 3, after: 1.5, before: 1.5, ten: 1.5, missing: 1.5, show: 2, build: 2, find: 3 };
+const settings = Object.assign({ max: 100, minutes: 9, time: 'lenient', count: 20, beadHelp: 'guided', fade: false, music: true, voice: true, voiceName: '' }, store.get('settings', {}));
+settings.qs = { ...Q_DEFAULTS, ...settings.qs };
 // play time used to be 3/5/7 buttons defaulting to 5; move older saved settings onto the new 7 min default
 if (!settings.slider) { settings.minutes = 9; settings.slider = true; }
 // the default went from 7 to 9 minutes; move devices still on the old default
@@ -719,61 +741,61 @@ function praise(q, tries, p = pick(tries ? PRAISE_AGAIN : PRAISE)) {
   }
 }
 
-let bag = [], retry = [], lastAnswer = 0, asked = new Set();
+let plan = [], retry = [], lastAnswer = 0, asked = new Set();
+let total = 0, done = 0; // questions in the plan, and how many of them are answered (missed ones that come back don't count)
+const howMany = n => n === 1.5 ? rnd(1, 2) : n;
+// the game's questions as the settings ask: the mix shuffled, then "tap the number" at the end,
+// since finding a number among 100 is hard until the layout is familiar
+function makePlan(finds) {
+  const types = [];
+  for (const [type, n] of Object.entries(settings.qs)) if (type !== 'find') for (let i = howMany(n); i > 0; i--) types.push(type);
+  shuffle(types);
+  if (finds) for (let i = howMany(settings.qs.find); i > 0; i--) types.push('find');
+  return types;
+}
 // the same question twice in a session; 34/43 and 43/34 count as the same
 const qKey = q => [q.type, q.ask, q.x, Math.min(q.a, q.b), Math.max(q.a, q.b), q.more, q.bigger].join();
 function nextQ() {
   retry.forEach(r => r.due--);
-  const i = retry.findIndex(r => r.due <= 0);
+  let i = retry.findIndex(r => r.due <= 0);
+  if (i < 0 && !plan.length) i = 0; // nothing else left to ask
   if (i >= 0) return retry.splice(i, 1)[0].q; // only missed questions come back
+  const type = plan.shift();
   let q;
-  for (let tries = 0; ; tries++) {
-    if (!bag.length) bag = shuffle(['after', 'before', 'after', 'before', 'compare', 'compare', 'compare', 'ten', 'ten', 'missing', 'missing', 'show', 'build']);
-    q = makeQ(bag[bag.length - 1]);
-    if (q.answer === lastAnswer || (asked.has(qKey(q)) && tries < 40)) continue;
-    bag.pop();
-    break;
+  for (let tries = 0; tries < 40; tries++) {
+    q = makeQ(type);
+    if (q.answer !== lastAnswer && !asked.has(qKey(q))) break;
   }
   asked.add(qKey(q));
   return q;
 }
 
-// three "tap the number" questions from different columns, to get used to the layout
-function warmupQs() {
-  const cols = shuffle(range(0, N / 10 - 1)).slice(0, 3);
-  return cols.map(c => ({ type: 'find', x: c * 10 + rnd(1, 10) })).map(q => ({ ...q, answer: q.x }));
-}
-
-/* ---------------- step 1: counting, from 1 or wherever the child chooses ---------------- */
-let mode = 'count', countNext = 0, countIdle = null;
+/* ---------------- step 1: a warm-up, counting from the top of a column (1, 11, 21 …) ---------------- */
+let mode = 'count', countNext = 0, countEnd = 0, countIdle = null;
+// the tops of the columns the count fits after, on the board
+const countStarts = (len, max) => range(1, max - len + 1, 10);
+const countIntro = (len, from) => `Let's warm up by counting ${len} numbers. We'll start from ${from}.`;
 
 function startCounting() {
-  mode = 'count'; countNext = 0; current = null;
-  blanks = randomBlanks(new Set([1]));
+  const len = Math.min(settings.count, N);
+  if (!len) return startQuiz();
+  countNext = pick(countStarts(len, N)); countEnd = countNext + len - 1;
+  mode = 'count'; current = null;
+  blanks = randomBlanks(new Set([countNext]));
   renderTiles(); hint = null; drawHint();
   $('#choices').innerHTML = '';
-  $('#prompt').innerHTML = `Let's count!<br>Tap ${num(1)}<small>or any number to start from</small>`;
+  setCountPrompt();
   $('#skip').hidden = false;
   locked = false;
-  speak("Let's count! Tap 1. Or tap any number to start from there.");
+  speak(countIntro(len, countNext));
   armIdle();
 }
 function setCountPrompt() { $('#prompt').innerHTML = `Let's count!<br>Tap ${num(countNext)}`; }
 // when the child gets stuck, softly show where the next number is
-function armIdle() { clearTimeout(countIdle); countIdle = setTimeout(() => tiles[countNext || 1].classList.add('glow'), 8000); }
+function armIdle() { clearTimeout(countIdle); countIdle = setTimeout(() => tiles[countNext].classList.add('glow'), 8000); }
 
 function countTap(n) {
   if (locked) return;
-  if (!countNext) {
-    // first tap picks the starting number
-    tiles[1].classList.remove('glow');
-    reveal(n); tiles[n].classList.add('good');
-    if (n === N) return endCounting(`${N}! That's the very end.`);
-    countNext = n + 1;
-    speak(n === 1 ? '1' : `Alright, let's start counting from ${n}.`);
-    setCountPrompt(); armIdle();
-    return;
-  }
   if (n < countNext && tiles[n].classList.contains('good')) return;
   if (n !== countNext) {
     tiles[n].classList.add('dim'); setTimeout(() => tiles[n].classList.remove('dim'), 1200);
@@ -782,26 +804,29 @@ function countTap(n) {
     return;
   }
   tiles[n].classList.remove('glow'); reveal(n); tiles[n].classList.add('good');
-  if (n === N) return endCounting(`${N}! Well done!`);
+  if (n === countEnd) return endCounting(n);
   countNext++;
   speak(n % 10 === 0 ? `${n}. Now up to the top!` : String(n));
   setCountPrompt(); armIdle();
 }
 
-async function endCounting(message) {
+async function endCounting(last) {
   clearTimeout(countIdle); locked = true; $('#skip').hidden = true;
-  if (message) { chime(); $('#prompt').innerHTML = message; await speak(message); await wait(500); }
-  startWarmup();
+  if (last) {
+    chime(); $('#prompt').innerHTML = `${last}! Well done!`;
+    await speak(`${last}. Well done!`); await wait(500); // the number and the praise already have clips
+  }
+  startQuiz();
 }
 
-/* ---------------- step 2: warm-up, then step 3: quiz ---------------- */
-let current = null, locked = true, tries = 0, cards = {}, warmups = [], quizStarted = false;
+/* ---------------- step 2: questions ---------------- */
+let current = null, locked = true, tries = 0, cards = {}, findsSaid = false;
 
-async function startWarmup() {
-  mode = 'quiz'; warmups = warmupQs(); quizStarted = false;
+async function startQuiz() {
+  mode = 'quiz'; current = null;
   blanks = new Set(); renderTiles();
   $('#prompt').innerHTML = '';
-  await speak("Now let's find some numbers.");
+  if (plan.length) await speak('Now, some questions.');
   next();
 }
 
@@ -866,6 +891,7 @@ async function answer(n, el) {
     el.classList.add('good'); cards[q.answer]?.classList.add('good');
     tiles[q.answer].classList.add('good'); reveal(q.answer);
     if (q.type === 'beads') q.phase = 'done';
+    if (!q.retry) done++;
     chime();
     await speak(praise(q, tries));
     await wait(600);
@@ -1010,21 +1036,44 @@ function beadLines(q) {
 }
 
 /* ---------------- time: no hard stop, gentle warnings ---------------- */
+// Strict: the game ends after the question that's on when the play time runs out, with reminders before.
+// Lenient: the game ends when every question is done. The turtle walks at the play time's pace; if it
+// gets to 70% with less than 70% of the questions done, it naps until 90% are done, then hurries
+// along, and it only reaches the end with the last question.
 let elapsed = 0, lastTick = 0, timerId = null, paused = false;
 let warns = 0, finalQ = false; // warns: reminders given so far, "2 more minutes" then "1 more minute"
+let turtle = 0, turtleState = 'walk'; // how far along the turtle is (0–1); walk, nap or hurry
 const sessionMs = () => settings.minutes * 60000;
+const lenient = () => settings.time === 'lenient';
 
 function tick() {
-  const now = performance.now();
-  if (!document.hidden && !paused) elapsed += now - lastTick;
-  lastTick = now;
-  $('#turtle').style.setProperty('--p', Math.min(elapsed / sessionMs(), 1));
+  const now = performance.now(), dt = !document.hidden && !paused ? now - lastTick : 0;
+  elapsed += dt; lastTick = now;
+  if (!lenient()) turtle = Math.min(elapsed / sessionMs(), 1);
+  else if ($('#end').hidden) {
+    const share = total ? done / total : 1;
+    if (turtleState === 'walk' && turtle >= .7 && share < .7) turtleState = 'nap';
+    if (turtleState === 'nap' && share >= .9) turtleState = 'hurry';
+    if (turtleState !== 'nap') turtle = Math.min(turtle + dt / sessionMs() * (turtleState === 'hurry' ? 2.5 : 1), .95);
+  }
+  drawTurtle();
+}
+function drawTurtle() {
+  $('#turtle').style.setProperty('--p', turtle);
+  $('#turtle').classList.toggle('asleep', lenient() && $('#end').hidden && (turtleState === 'nap' || turtle >= .95));
 }
 
 async function next() {
   if (finalQ) return finish();
+  if (!plan.length && !lenient()) plan = makePlan(false); // time left over: another round, without the finds
+  if (!plan.length && !retry.length) return finish();
   const left = sessionMs() - elapsed;
-  if (left <= 15000) {
+  if (lenient()) {
+    if (plan.length + retry.length === 1) {
+      finalQ = true; $('#note').textContent = 'Last one';
+      await speak('Last one!');
+    }
+  } else if (left <= 15000) {
     finalQ = true; $('#note').textContent = 'Last one';
     await speak('Last one!');
   } else if (left <= 60000 && warns < 2) {
@@ -1034,19 +1083,17 @@ async function next() {
     warns = 1; $('#note').textContent = '2 more minutes';
     await speak('Just 2 more minutes to go!');
   }
-  if (warmups.length) return show(warmups.shift());
-  if (!quizStarted) {
-    quizStarted = true;
-    blanks = new Set(); renderTiles(); $('#prompt').innerHTML = '';
-    await speak('Now, some questions.');
+  const q = nextQ();
+  if (q.type === 'find' && !findsSaid) {
+    findsSaid = true;
+    await speak("Now let's find some numbers.");
   }
-  show(nextQ());
+  show(q);
 }
 
 // lines said outside the questions (allLines and preload use this list)
-const SAY = ["Let's count! Tap 1. Or tap any number to start from there.", "Now let's find some numbers.", "Let's look together.",
-             'Tap the glowing one.', 'Last one!', 'Just 2 more minutes to go!', 'Just one more minute to go!', 'Now, some questions.',
-             'Tap 1, or any number.', 'Now up to the top!', "That's the very end."];
+const SAY = ["Now let's find some numbers.", "Let's look together.", 'Tap the glowing one.', 'Last one!',
+             'Just 2 more minutes to go!', 'Just one more minute to go!', 'Now, some questions.', 'Now up to the top!'];
 
 const ANIMALS = [['🐬', 'dolphin'], ['🐒', 'monkey'], ['🐘', 'elephant'], ['🐢', 'turtle'], ['🐼', 'panda'], ['🦒', 'giraffe'],
                  ['🐧', 'penguin'], ['🐨', 'koala'], ['🦉', 'owl'], ['🐳', 'whale'], ['🐰', 'bunny'], ['🦆', 'duck'],
@@ -1074,6 +1121,7 @@ function nextAnimal() {
 
 async function finish() {
   current = null; locked = true; clearInterval(timerId); clearTimeout(countIdle);
+  turtle = 1; drawTurtle();
   const [emoji, name] = nextAnimal();
   $('#animal').textContent = emoji;
   $('#bye').textContent = `Bye bye from the ${name}`;
@@ -1089,11 +1137,12 @@ function startSession() {
   musicFading = false; startMusic(); setMusicLevel(1.5);
   if (N !== settings.max) buildGrid();
   sessionStarted = true;
-  bag = []; retry = []; asked = new Set(); lastAnswer = 0; current = null; locked = true; warmups = [];
-  elapsed = 0; warns = 0; finalQ = false; paused = false;
+  plan = makePlan(true); total = plan.length; done = 0;
+  retry = []; asked = new Set(); lastAnswer = 0; current = null; locked = true; findsSaid = false;
+  elapsed = 0; warns = 0; finalQ = false; paused = false; turtle = 0; turtleState = 'walk';
   $('#note').textContent = '';
-  lastTick = performance.now(); clearInterval(timerId); timerId = setInterval(tick, 1000); tick();
   $('#start').hidden = true; $('#end').hidden = true;
+  lastTick = performance.now(); clearInterval(timerId); timerId = setInterval(tick, 1000); tick();
   preload(...SAY, ...PRAISE, ...PRAISE_AGAIN, ...range(1, N).map(String));
   startCounting();
 }
@@ -1107,7 +1156,7 @@ $('#skip').addEventListener('click', () => {
   endCounting();
 });
 $('#say').addEventListener('click', () => {
-  if (mode === 'count') speak(countNext ? `Tap ${countNext}.` : 'Tap 1, or any number.');
+  if (mode === 'count') speak(`Tap ${countNext}.`);
   else if (current) speak(current.say);
 });
 
@@ -1127,6 +1176,11 @@ function syncSettingsUI() {
   document.querySelectorAll('#range button').forEach(b => b.classList.toggle('on', +b.dataset.r === settings.max));
   document.querySelectorAll('#beadHelp button').forEach(b => b.classList.toggle('on', b.dataset.h === settings.beadHelp));
   $('#mins').value = settings.minutes; $('#minsOut').textContent = `${settings.minutes} min`;
+  document.querySelectorAll('#timeMode button').forEach(b => b.classList.toggle('on', b.dataset.t === settings.time));
+  $('#timeHint').textContent = lenient()
+    ? 'The child finishes every question. The turtle naps if the questions fall behind.'
+    : 'The game ends after the question that is on when the play time is over.';
+  document.querySelectorAll('#qCounts .step').forEach(s => { s.querySelector('output').textContent = stepLabel(s.dataset.k, stepValue(s.dataset.k)); });
   $('#fadeOn').checked = settings.fade;
   $('#musicOn').checked = settings.music;
   $('#voiceOn').checked = settings.voice;
@@ -1151,6 +1205,29 @@ document.querySelectorAll('#beadHelp button').forEach(b => b.addEventListener('c
   settings.beadHelp = b.dataset.h; saveSettings(); syncSettingsUI();
 }));
 $('#mins').addEventListener('input', e => { settings.minutes = +e.target.value; saveSettings(); syncSettingsUI(); tick(); });
+document.querySelectorAll('#timeMode button').forEach(b => b.addEventListener('click', () => {
+  settings.time = b.dataset.t; saveSettings(); syncSettingsUI(); tick();
+}));
+
+// a − n + stepper for the warm-up count and for each kind of question
+const Q_NAMES = { count: 'Warm-up: numbers to count', compare: 'Bigger or smaller', after: 'What comes after', before: 'What comes before',
+                  ten: '10 more, 10 less', missing: 'Which number is hiding', show: 'Make a number (beads)',
+                  build: 'Tens and ones (beads)', find: 'Tap the number (at the end)' };
+const STEPS = { count: range(0, 50, 10), q: [0, 1, 1.5, ...range(2, 10)] };
+const stepValue = k => k === 'count' ? settings.count : settings.qs[k];
+const stepLabel = (k, v) => k === 'count' && !v ? 'Off' : v === 1.5 ? '1–2' : String(v);
+for (const k of Object.keys(Q_NAMES)) {
+  const row = document.createElement('div');
+  row.className = 'row q';
+  row.innerHTML = `<span>${Q_NAMES[k]}</span><div class="step" data-k="${k}"><button data-d="-1" aria-label="Fewer">−</button><output></output><button data-d="1" aria-label="More">+</button></div>`;
+  row.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    const steps = STEPS[k === 'count' ? 'count' : 'q'];
+    const i = Math.min(steps.length - 1, Math.max(0, steps.indexOf(stepValue(k)) + +b.dataset.d));
+    if (k === 'count') settings.count = steps[i]; else settings.qs[k] = steps[i];
+    saveSettings(); syncSettingsUI();
+  }));
+  $('#qCounts').appendChild(row);
+}
 $('#fadeOn').addEventListener('change', e => { settings.fade = e.target.checked; saveSettings(); });
 $('#musicOn').addEventListener('change', e => { settings.music = e.target.checked; saveSettings(); syncMusicBtn(); setMusicLevel(); });
 $('#voiceOn').addEventListener('change', e => { settings.voice = e.target.checked; saveSettings(); if (!settings.voice) stopSpeech(); });
@@ -1165,11 +1242,11 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#setti
 function allLines() {
   const lines = [...SAY, ...PRAISE, ...PRAISE_AGAIN, 'What comes after 20?'], keepN = N;
   N = 100;
-  for (const m of [50, 100]) lines.push(`${m}! That's the very end.`, `${m}! Well done!`);
+  for (const len of STEPS.count) if (len) for (const from of countStarts(len, 100)) lines.push(countIntro(len, from));
   for (const [, name] of ANIMALS) lines.push(byeLine(name));
   const qs = [];
   for (let x = 1; x <= N; x++) {
-    lines.push(String(x), `Alright, let's start counting from ${x}.`, `Find ${x}.`, `Tap ${x}.`, `${x}. Now up to the top!`);
+    lines.push(String(x), `Find ${x}.`, `Tap ${x}.`, `${x}. Now up to the top!`);
     qs.push({ type: 'find', x, answer: x }, { type: 'missing', x, answer: x });
     if (x < N) qs.push({ type: 'after', x, answer: x + 1 });
     if (x > 1) qs.push({ type: 'before', x, answer: x - 1 });
