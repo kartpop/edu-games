@@ -21,6 +21,7 @@ from html import unescape
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+import tts_samples
 from tts_samples import ROOT, STRONG, audio, call, request
 
 MODEL, VOICE, LANG = 'gemini-3.8-flash-tts', 'Leda', 'en-IN'
@@ -116,7 +117,10 @@ def main():
     ap.add_argument('--redo', nargs='+', default=[], help='record these pieces again')
     ap.add_argument('--only', help='record only missing pieces matching this regular expression')
     ap.add_argument('--workers', type=int, default=10)
+    ap.add_argument('--rpm', type=int, default=tts_samples.RPM,
+                    help='requests a minute, spread evenly (each take is 2: record, then check)')
     args = ap.parse_args()
+    tts_samples.RPM = args.rpm
 
     out = VOICE_DIR
     out.mkdir(exist_ok=True)

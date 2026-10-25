@@ -62,6 +62,10 @@ model reads the notes aloud.
   gitignored (optional `GOOGLE_CLOUD_LOCATION`, default `global`). Never print it or read the file;
   check that it exists with `grep -c`. Don't use the old AI Studio `GEMINI_API_KEY`, even if it's
   still in `.env`. `tools/agent_platform_test.py` checks that the key works.
+- Requests are paced: at most `--rpm` a minute (default 30), spread evenly with jitter, across all
+  threads. Each take is 2 requests (record, then check). Bursts get slowed down by Agent Platform's
+  shared capacity even well inside the project quota, so don't remove the pacing to go faster.
+  The timeout is 300 s, because a request we give up on is still billed.
 - Billing goes to the key's Google Cloud project. A full game of ~1,800 pieces cost about $5.
   Agree with the user before a run much bigger than that.
 

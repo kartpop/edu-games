@@ -9,7 +9,7 @@ key's project. Reads from the environment or from edu-games/.env (gitignored):
   GOOGLE_CLOUD_LOCATION  optional, default "global"
 Writes one .wav per voice, each reading the same few game lines.
 """
-import argparse, base64, json, os, re, sys, time, urllib.error, urllib.request, wave
+import argparse, base64, json, os, random, re, sys, threading, time, urllib.error, urllib.request, wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,10 +49,29 @@ API = f'https://{HOST}/v1/publishers/google'  # + models/<model>:generateContent
 DEFAULT_MODEL = 'gemini-3.8-flash-tts'
 
 
+# Requests are spread out evenly, at most RPM a minute with a little jitter, however many threads send
+# them. Sent all at once, the first ~20 came back in seconds and the last few took 3-4 minutes: Gemini on
+# Agent Platform shares capacity between customers (dynamic shared quota) and slows bursts down,
+# even well inside the project's own quota.
+RPM = 30
+_pace = threading.Lock()
+_next_slot = 0.0
+
+
+def wait_turn():
+    global _next_slot
+    with _pace:
+        now = time.monotonic()
+        slot = max(now, _next_slot)
+        _next_slot = slot + 60 / RPM * random.uniform(0.8, 1.2)
+    time.sleep(slot - now)
+
+
 def call(path, body=None):
     req = urllib.request.Request(f'{API}/{path}', data=json.dumps(body).encode() if body else None,
                                  headers={'x-goog-api-key': KEY, 'Content-Type': 'application/json'})
     for attempt in range(5):
+        wait_turn()
         try:
             # Agent Platform can take minutes (95th percentile ~280 s); a request we give up on still
             # finishes and is billed, and the retry pays again
@@ -60,8 +79,8 @@ def call(path, body=None):
                 return json.load(r)
         except urllib.error.HTTPError as e:
             if e.code in (429, 500, 503) and attempt < 4:
-                wait = 20 * (attempt + 1)
-                print(f'  {e.code}, retrying in {wait}s')
+                wait = 20 * 2 ** attempt * random.uniform(0.75, 1.25)  # back off, and not in step with other threads
+                print(f'  {e.code}, retrying in {wait:.0f}s')
                 time.sleep(wait)
                 continue
             sys.exit(f'{e.code}: {e.read().decode()[:400]}')
