@@ -11,6 +11,7 @@ Games live at `<grade>/<subject>/<game>/`.
 | Game | Grade | Subject | What it practises |
 |---|---|---|---|
 | [numbers-till-100](https://kartpop.github.io/edu-games/junior-kg/math/numbers-till-100/) | Junior KG | Math | Counting 1–100 (or 1–50) on a column grid; before/after, bigger/smaller, 10 more/less, missing numbers |
+| [dino-walk](https://kartpop.github.io/edu-games/junior-kg/mixed/dino-walk/) | Junior KG | English and math | A dinosaur's walk with two stops: "a" or "an" before a word, then 4–5 number questions of different kinds |
 
 ## Play on a phone or tablet at home
 

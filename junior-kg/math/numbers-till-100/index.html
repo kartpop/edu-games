@@ -45,7 +45,7 @@
   }
   button { font-family: inherit; color: inherit; }
 
-  #app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; padding: 56px 20px 8px; }
+  #app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; padding: 56px 20px 12px; }
   .main { flex: 1; min-height: 0; display: flex; gap: 28px; }
   .panel {
     flex: 0 0 38%; display: flex; flex-direction: column;
@@ -68,10 +68,6 @@
   #gear { left: 12px; }
   #musicBtn { right: 12px; }
   #musicBtn.off { opacity: .35; text-decoration: line-through; }
-  .title {
-    position: fixed; top: 18px; left: 0; right: 0; text-align: center;
-    font-weight: 800; font-size: 17px; letter-spacing: .06em; color: var(--soft); pointer-events: none;
-  }
 
   /* ---------- question panel ---------- */
   .prompt { font-size: clamp(26px, 3.4vw, 50px); font-weight: 700; line-height: 1.45; min-height: 1.5em; }
@@ -161,8 +157,8 @@
   .hint { fill: none; stroke: var(--coral); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 8; animation: fadein .8s ease; }
   @keyframes fadein { from { opacity: 0; } }
 
-  /* ---------- slow turtle = time ---------- */
-  .time { position: relative; height: 40px; flex: 0 0 auto; }
+  /* ---------- slow turtle = time, along the top between the two corner buttons (as in Dino Walk) ---------- */
+  .time { position: fixed; top: 8px; left: 62px; right: 62px; height: 40px; z-index: 5; pointer-events: none; }
   .track { position: absolute; left: 10px; right: 10px; top: 55%; border-top: 2px dotted var(--line); }
   #turtle {
     --p: 0;
@@ -181,7 +177,7 @@
   #turtle .shell { transform-box: fill-box; transform-origin: bottom; }
   #turtle.asleep .shell { animation: snooze 4s ease-in-out 1.2s infinite; }
   @keyframes snooze { 50% { transform: translateY(3px) scaleY(.96); } }
-  /* beside the head, on the track: above the turtle is the board. Near the end it moves to the tail side */
+  /* beside the head, on the track, so the z's stay inside the strip. Near the end they move to the tail side */
   #zzz {
     position: absolute; left: 100%; top: 0; margin-left: 2px; white-space: nowrap;
     font-size: 9px; font-weight: 700; color: var(--soft); opacity: 0; transition: opacity 1.5s;
@@ -247,7 +243,6 @@
 <button id="musicBtn" class="icon" title="Music on/off" aria-label="Music on/off">♪</button>
 
 <div id="app">
-  <div class="title">NUMBERS</div>
   <div class="main">
     <div class="panel">
       <div class="prompt" id="prompt"></div>
@@ -965,7 +960,7 @@ function comeBack(q) {
 // Tens first (the ones rod waits), then ones. Each tens bead lights up its column of ten on the board
 // and says 10, 20, 30; each ones bead lights up the next square and counts on, 31, 32. With
 // "Stop at the count" each rod stops at the right number; with "Child taps Done" the child decides, and can
-// tap the top bead to take it off.
+// tap the top bead (or below it) to take it off.
 const beadsT = [], beadsO = [];
 for (const [rod, list] of [[$('#rodT'), beadsT], [$('#rodO'), beadsO]]) {
   for (let i = 0; i < 10; i++) {
@@ -1019,7 +1014,9 @@ function beadTap(key, e) {
   const q = current;
   if (locked || !q || q.type !== 'beads' || q.phase !== key) return;
   const list = key === 'tens' ? beadsT : beadsO, top = list[q[key] - 1];
-  if (settings.beadHelp === 'done' && top && e.target === top) { // take the top bead off
+  // a tap on the top bead or anywhere below it takes the top bead off; a tap above it adds one.
+  // Hitting the exact bead was too fiddly for small fingers (and grown-up ones)
+  if (settings.beadHelp === 'done' && top && e.clientY >= top.getBoundingClientRect().top) {
     q[key]--; renderBeads(q);
     stopSpeech(); if (+beadCount(q)) speak(beadCount(q));
     return;
