@@ -401,7 +401,9 @@ const store = {
   set(k, v) { try { localStorage.setItem('dino.' + k, JSON.stringify(v)); } catch {} },
 };
 // numQs 4.5 means four or five, picked at random
-const settings = Object.assign({ max: 100, anCount: 6, numQs: 4.5, beadHelp: 'guided', music: true, voice: true, voiceName: '' }, store.get('settings', {}));
+const settings = Object.assign({ max: 100, anCount: 6, numQs: 4.5, beadHelp: 'done', music: true, voice: true, voiceName: '' }, store.get('settings', {}));
+// the default for the beads went from "Stop at the count" to "Child taps Done"; move devices that saved the old one
+if (!settings.doneDefault) { settings.beadHelp = 'done'; settings.doneDefault = true; }
 const saveSettings = () => store.set('settings', settings);
 let N = settings.max; // highest number on the board, fixed for a session
 

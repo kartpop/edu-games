@@ -381,13 +381,15 @@ const store = {
 };
 // how many of each question a game has; 1.5 means one or two, picked at random
 const Q_DEFAULTS = { compare: 3, after: 1.5, before: 1.5, ten: 1.5, missing: 1.5, show: 2, build: 2, find: 3 };
-const settings = Object.assign({ max: 100, minutes: 9, time: 'lenient', count: 20, beadHelp: 'guided', fade: false, music: true, voice: true, voiceName: '' }, store.get('settings', {}));
+const settings = Object.assign({ max: 100, minutes: 9, time: 'lenient', count: 20, beadHelp: 'done', fade: false, music: true, voice: true, voiceName: '' }, store.get('settings', {}));
 settings.qs = { ...Q_DEFAULTS, ...settings.qs };
 // play time used to be 3/5/7 buttons defaulting to 5; move older saved settings onto the new 7 min default
 if (!settings.slider) { settings.minutes = 9; settings.slider = true; }
 // the default went from 7 to 9 minutes; move devices still on the old default
 if (!settings.nine) { if (settings.minutes === 7) settings.minutes = 9; settings.nine = true; }
 settings.minutes = Math.min(20, Math.max(5, settings.minutes));
+// the default for the beads went from "Stop at the count" to "Child taps Done"; move devices that saved the old one
+if (!settings.doneDefault) { settings.beadHelp = 'done'; settings.doneDefault = true; }
 const saveSettings = () => store.set('settings', settings);
 let N = settings.max; // highest number on the board, fixed for a session
 
